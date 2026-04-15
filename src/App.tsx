@@ -10,6 +10,7 @@ import ControlCiego from './pages/recepcion/ControlCiego'
 import Areas from './pages/deposito/Areas'
 import Ubicaciones from './pages/deposito/Ubicaciones'
 import Tareas from './pages/deposito/Tareas'
+import ReposicionPicking from './pages/deposito/ReposicionPicking'
 import { Movimientos, Ajustes } from './pages/deposito/MovimientosAjustes'
 // Preparacion
 import Preparaciones from './pages/preparacion/Preparaciones'
@@ -23,6 +24,7 @@ import { TipoUbicacion, MotivoAjuste, Negocio, Impresoras } from './pages/config
 // Reportes
 import ConsultarStock from './pages/reportes/ConsultarStock'
 import Estadisticas from './pages/reportes/Estadisticas'
+import TareasRealtime from './pages/reportes/TareasRealtime'
 
 function LoadingScreen() {
   return (
@@ -63,10 +65,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Públicas */}
           <Route path="/login" element={<Public><Login /></Public>} />
-
-          {/* Dashboard */}
           <Route path="/" element={<Protected><Dashboard /></Protected>} />
 
           {/* Recepcion */}
@@ -76,7 +75,7 @@ export default function App() {
           {/* Deposito */}
           <Route path="/deposito/areas" element={<Protected><Areas /></Protected>} />
           <Route path="/deposito/ubicaciones" element={<Protected><Ubicaciones /></Protected>} />
-          <Route path="/deposito/reposicion" element={<Protected><ComingSoon title="Reposición de Picking" /></Protected>} />
+          <Route path="/deposito/reposicion" element={<Protected><ReposicionPicking /></Protected>} />
           <Route path="/deposito/tareas" element={<Protected><Tareas /></Protected>} />
           <Route path="/deposito/movimientos" element={<Protected><Movimientos /></Protected>} />
           <Route path="/deposito/ajustes" element={<Protected><Ajustes /></Protected>} />
@@ -104,9 +103,8 @@ export default function App() {
           {/* Reportes */}
           <Route path="/reportes/stock" element={<Protected><ConsultarStock /></Protected>} />
           <Route path="/reportes/estadisticas" element={<Protected><Estadisticas /></Protected>} />
-          <Route path="/reportes/tareas-activas" element={<Protected><ComingSoon title="Tareas Activas" /></Protected>} />
+          <Route path="/reportes/tareas-activas" element={<Protected><TareasRealtime /></Protected>} />
 
-          {/* 404 */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
