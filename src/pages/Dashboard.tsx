@@ -1,158 +1,218 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import Layout from '../components/Layout'
 import { supabase } from '../lib/supabase'
-import {
-  PackageCheck, Warehouse, ClipboardList, Truck,
-  BarChart2, Activity, ArrowRight
-} from 'lucide-react'
-import { Card, Spinner } from '../components/ui'
+import { useAuth } from '../context/AuthContext'
 
 interface Stats {
-  recepciones_pendientes: number
-  pedidos_pendientes: number
-  preparaciones_activas: number
-  despachos_hoy: number
-  tareas_pendientes: number
+  recepcionesHoy: number
+  preparacionesHoy: number
+  despachosHoy: number
+  tareasPendientes: number
+  tareasEnProceso: number
+  stockTotal: number
+  articulosBajoStock: number
+  reposicionPendiente: number
 }
 
-const quickLinks = [
-  {
-    title: 'Estadísticas del día',
-    desc: 'Dashboard con pickeos, unidades preparadas y más',
-    icon: BarChart2,
-    path: '/reportes/estadisticas',
-    color: 'blue'
-  },
-  {
-    title: 'Pedidos',
-    desc: 'Crear, editar y descargar pedidos',
-    icon: ClipboardList,
-    path: '/preparacion/pedidos',
-    color: 'green'
-  },
-  {
-    title: 'Preparaciones',
-    desc: 'Gestiona las preparaciones activas',
-    icon: PackageCheck,
-    path: '/preparacion/preparaciones',
-    color: 'yellow'
-  },
-  {
-    title: 'Tareas',
-    desc: 'Ver y gestionar tareas del depósito',
-    icon: Activity,
-    path: '/deposito/tareas',
-    color: 'orange'
-  },
-  {
-    title: 'Despachos',
-    desc: 'Configura y crea despachos',
-    icon: Truck,
-    path: '/despacho/despachos',
-    color: 'purple'
-  },
-  {
-    title: 'Deposito',
-    desc: 'Areas, ubicaciones y movimientos',
-    icon: Warehouse,
-    path: '/deposito/areas',
-    color: 'teal'
-  },
-]
-
-const colorMap: Record<string, string> = {
-  blue: 'bg-blue-900/30 text-blue-400 border-blue-700/30',
-  green: 'bg-green-900/30 text-green-400 border-green-700/30',
-  yellow: 'bg-yellow-900/30 text-yellow-400 border-yellow-700/30',
-  orange: 'bg-orange-900/30 text-orange-400 border-orange-700/30',
-  purple: 'bg-purple-900/30 text-purple-400 border-purple-700/30',
-  teal: 'bg-teal-900/30 text-teal-400 border-teal-700/30',
+interface ActividadReciente {
+  tipo: string
+  descripcion: string
+  tiempo: string
+  color: string
 }
 
 export default function Dashboard() {
-  const { profile } = useAuth()
-  const [stats, setStats] = useState<Stats | null>(null)
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  const [stats, setStats] = useState<Stats>({
+    recepcionesHoy: 0, preparacionesHoy: 0, despachosHoy: 0,
+    tareasPendientes: 0, tareasEnProceso: 0, stockTotal: 0,
+    articulosBajoStock: 0, reposicionPendiente: 0,
+  })
+  const [actividad, setActividad] = useState<ActividadReciente[]>([])
   const [loading, setLoading] = useState(true)
+  const [hora, setHora] = useState(new Date())
 
   useEffect(() => {
-    const load = async () => {
-      if (!profile?.deposito_id) { setLoading(false); return }
-      const did = profile.deposito_id
+    fetchStats()
+    const timer = setInterval(() => setHora(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
-      const [rec, ped, prep, des, tar] = await Promise.all([
-        supabase.from('recepciones').select('id', { count: 'exact', head: true })
-          .eq('deposito_id', did).in('estado', ['PendienteArribo', 'EnRecepcion']),
-        supabase.from('pedidos').select('id', { count: 'exact', head: true })
-          .eq('deposito_id', did).eq('estado', 'Pendiente'),
-        supabase.from('preparaciones').select('id', { count: 'exact', head: true })
-          .eq('deposito_id', did).in('estado', ['Pendiente', 'EnProceso']),
-        supabase.from('despachos').select('id', { count: 'exact', head: true })
-          .eq('deposito_id', did).gte('fecha', new Date().toISOString().split('T')[0]),
-        supabase.from('tareas').select('id', { count: 'exact', head: true })
-          .eq('deposito_id', did).eq('estado', 'Pendiente'),
-      ])
+  async function fetchStats() {
+    const hoy = new Date(); hoy.setHours(0,0,0,0)
+    const hoyISO = hoy.toISOString()
 
-      setStats({
-        recepciones_pendientes: rec.count ?? 0,
-        pedidos_pendientes: ped.count ?? 0,
-        preparaciones_activas: prep.count ?? 0,
-        despachos_hoy: des.count ?? 0,
-        tareas_pendientes: tar.count ?? 0,
-      })
-      setLoading(false)
-    }
-    load()
-  }, [profile])
+    const [
+      { count: rec }, { count: prep }, { count: desp },
+      { count: tPend }, { count: tProc },
+      { data: stockData },
+      { count: reposPend }
+    ] = await Promise.all([
+      supabase.from('documentos_recepcion').select('id', { count: 'exact', head: true }).gte('created_at', hoyISO),
+      supabase.from('preparaciones').select('id', { count: 'exact', head: true }).gte('created_at', hoyISO),
+      supabase.from('despachos').select('id', { count: 'exact', head: true }).gte('created_at', hoyISO),
+      supabase.from('tareas').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente'),
+      supabase.from('tareas').select('id', { count: 'exact', head: true }).eq('estado', 'en_proceso'),
+      supabase.from('stock').select('cantidad'),
+      supabase.from('reposicion_picking').select('id', { count: 'exact', head: true }).eq('estado', 'pendiente'),
+    ])
+
+    const totalStock = (stockData || []).reduce((sum: number, s: any) => sum + (s.cantidad || 0), 0)
+
+    setStats({
+      recepcionesHoy: rec || 0, preparacionesHoy: prep || 0, despachosHoy: desp || 0,
+      tareasPendientes: tPend || 0, tareasEnProceso: tProc || 0,
+      stockTotal: totalStock, articulosBajoStock: 0, reposicionPendiente: reposPend || 0,
+    })
+
+    // Actividad reciente
+    const [{ data: ultimasRec }, { data: ultimasPrep }, { data: ultimasDesp }] = await Promise.all([
+      supabase.from('documentos_recepcion').select('numero, created_at').order('created_at', { ascending: false }).limit(3),
+      supabase.from('preparaciones').select('numero, created_at').order('created_at', { ascending: false }).limit(3),
+      supabase.from('despachos').select('numero, created_at').order('created_at', { ascending: false }).limit(3),
+    ])
+
+    const act: ActividadReciente[] = [
+      ...(ultimasRec || []).map((r: any) => ({ tipo: 'Recepción', descripcion: r.numero, tiempo: r.created_at, color: 'bg-blue-500' })),
+      ...(ultimasPrep || []).map((p: any) => ({ tipo: 'Preparación', descripcion: p.numero, tiempo: p.created_at, color: 'bg-purple-500' })),
+      ...(ultimasDesp || []).map((d: any) => ({ tipo: 'Despacho', descripcion: d.numero, tiempo: d.created_at, color: 'bg-green-500' })),
+    ].sort((a, b) => new Date(b.tiempo).getTime() - new Date(a.tiempo).getTime()).slice(0, 8)
+
+    setActividad(act)
+    setLoading(false)
+  }
+
+  function tiempoRelativo(fecha: string) {
+    const diff = Date.now() - new Date(fecha).getTime()
+    const min = Math.floor(diff / 60000)
+    if (min < 1) return 'ahora'
+    if (min < 60) return `hace ${min}m`
+    const hs = Math.floor(min / 60)
+    if (hs < 24) return `hace ${hs}h`
+    return new Date(fecha).toLocaleDateString('es-AR')
+  }
+
+  const saludo = () => {
+    const h = hora.getHours()
+    if (h < 12) return 'Buenos días'
+    if (h < 19) return 'Buenas tardes'
+    return 'Buenas noches'
+  }
+
+  const kpisOperativos = [
+    { label: 'Recepciones hoy', value: stats.recepcionesHoy, icon: '📥', color: 'text-blue-400', bg: 'bg-blue-500/10', path: '/recepcion/documentos' },
+    { label: 'Preparaciones hoy', value: stats.preparacionesHoy, icon: '📦', color: 'text-purple-400', bg: 'bg-purple-500/10', path: '/preparacion/preparaciones' },
+    { label: 'Despachos hoy', value: stats.despachosHoy, icon: '🚚', color: 'text-green-400', bg: 'bg-green-500/10', path: '/despacho/despachos' },
+    { label: 'Stock total', value: stats.stockTotal.toLocaleString('es-AR'), icon: '📊', color: 'text-yellow-400', bg: 'bg-yellow-500/10', path: '/reportes/stock' },
+  ]
+
+  const kpisTareas = [
+    { label: 'Tareas pendientes', value: stats.tareasPendientes, icon: '⏳', color: 'text-blue-400', path: '/reportes/tareas-activas' },
+    { label: 'En proceso', value: stats.tareasEnProceso, icon: '⚡', color: 'text-yellow-400', path: '/reportes/tareas-activas' },
+    { label: 'Reposición pendiente', value: stats.reposicionPendiente, icon: '🔄', color: 'text-orange-400', path: '/deposito/reposicion' },
+  ]
+
+  const accesosRapidos = [
+    { label: 'Nueva Recepción', icon: '📥', path: '/recepcion/documentos', color: 'hover:border-blue-500/50' },
+    { label: 'Control Ciego', icon: '🎯', path: '/recepcion/control-ciego', color: 'hover:border-cyan-500/50' },
+    { label: 'Preparaciones', icon: '📦', path: '/preparacion/preparaciones', color: 'hover:border-purple-500/50' },
+    { label: 'Despachos', icon: '🚚', path: '/despacho/despachos', color: 'hover:border-green-500/50' },
+    { label: 'Consultar Stock', icon: '📊', path: '/reportes/stock', color: 'hover:border-yellow-500/50' },
+    { label: 'Tareas en Vivo', icon: '⚡', path: '/reportes/tareas-activas', color: 'hover:border-red-500/50' },
+    { label: 'Reposición', icon: '🔄', path: '/deposito/reposicion', color: 'hover:border-orange-500/50' },
+    { label: 'Estadísticas', icon: '📈', path: '/reportes/estadisticas', color: 'hover:border-primary-500/50' },
+  ]
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">
-          Bienvenido{profile?.nombre ? `, ${profile.nombre}` : ''}
-        </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          {profile?.deposito_id ? 'Depósito activo' : 'Sin depósito asignado'}
-        </p>
-      </div>
+    <Layout>
+      <div className="p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-2xl font-bold text-white">
+              {saludo()}{user?.email ? ', ' + user.email.split('@')[0] : ''} 👋
+            </h1>
+            <p className="text-dark-400 text-sm mt-1">
+              {hora.toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              {' · '}
+              <span className="font-mono">{hora.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+            </p>
+          </div>
+          <button onClick={fetchStats} className="btn-secondary px-3 py-2 rounded-lg text-sm flex items-center gap-2">
+            <span>↻</span> Actualizar
+          </button>
+        </div>
 
-      {loading ? <Spinner /> : (
-        <>
-          {/* Stats row */}
-          {stats && (
-            <div className="grid grid-cols-5 gap-4 mb-8">
-              {[
-                { label: 'Recepciones pendientes', val: stats.recepciones_pendientes, color: 'blue' },
-                { label: 'Pedidos pendientes', val: stats.pedidos_pendientes, color: 'yellow' },
-                { label: 'Preparaciones activas', val: stats.preparaciones_activas, color: 'green' },
-                { label: 'Despachos hoy', val: stats.despachos_hoy, color: 'purple' },
-                { label: 'Tareas pendientes', val: stats.tareas_pendientes, color: 'orange' },
-              ].map(s => (
-                <Card key={s.label} className="p-4">
-                  <p className="text-xs text-gray-500 mb-1">{s.label}</p>
-                  <p className="text-3xl font-bold text-white font-mono">{s.val}</p>
-                </Card>
+        {loading ? (
+          <div className="flex justify-center py-24"><div className="w-10 h-10 border-2 border-dark-500 border-t-primary-500 rounded-full animate-spin" /></div>
+        ) : (
+          <>
+            {/* KPIs operativos */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              {kpisOperativos.map(k => (
+                <button key={k.label} onClick={() => navigate(k.path)}
+                  className={`card rounded-xl p-5 text-left hover:scale-[1.02] transition-transform ${k.bg}`}>
+                  <div className="text-2xl mb-2">{k.icon}</div>
+                  <p className={`text-3xl font-bold ${k.color}`}>{k.value}</p>
+                  <p className="text-dark-400 text-sm mt-1">{k.label}</p>
+                </button>
               ))}
             </div>
-          )}
 
-          {/* Quick links grid */}
-          <div className="grid grid-cols-3 gap-4">
-            {quickLinks.map(item => (
-              <Link key={item.path} to={item.path}>
-                <Card className={`p-5 border hover:border-opacity-60 transition-all hover:translate-y-[-1px] cursor-pointer ${colorMap[item.color]}`}>
-                  <div className="flex items-start justify-between mb-3">
-                    <item.icon className="w-6 h-6" />
-                    <ArrowRight className="w-4 h-4 opacity-50" />
+            {/* KPIs tareas + actividad */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              {kpisTareas.map(k => (
+                <button key={k.label} onClick={() => navigate(k.path)}
+                  className="card rounded-xl p-4 text-left flex items-center gap-4 hover:border-dark-600 transition-colors">
+                  <span className="text-2xl">{k.icon}</span>
+                  <div>
+                    <p className={`text-2xl font-bold ${k.color}`}>{k.value}</p>
+                    <p className="text-dark-400 text-sm">{k.label}</p>
                   </div>
-                  <h3 className="font-semibold text-white mb-1">{item.title}</h3>
-                  <p className="text-xs opacity-70">{item.desc}</p>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Accesos rápidos + Actividad reciente */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Accesos rápidos */}
+              <div>
+                <h2 className="text-white font-semibold mb-3">Accesos rápidos</h2>
+                <div className="grid grid-cols-4 gap-2">
+                  {accesosRapidos.map(a => (
+                    <button key={a.label} onClick={() => navigate(a.path)}
+                      className={`card rounded-xl p-3 flex flex-col items-center gap-2 transition-colors ${a.color}`}>
+                      <span className="text-xl">{a.icon}</span>
+                      <span className="text-dark-300 text-xs text-center leading-tight">{a.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Actividad reciente */}
+              <div>
+                <h2 className="text-white font-semibold mb-3">Actividad reciente</h2>
+                <div className="card rounded-xl overflow-hidden">
+                  {actividad.length === 0 ? (
+                    <div className="py-8 text-center text-dark-500 text-sm">Sin actividad registrada hoy</div>
+                  ) : actividad.map((a, i) => (
+                    <div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-dark-800 last:border-0">
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${a.color}`} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-dark-400 text-xs">{a.tipo} · </span>
+                        <span className="text-white text-sm font-mono">{a.descripcion}</span>
+                      </div>
+                      <span className="text-dark-600 text-xs flex-shrink-0">{tiempoRelativo(a.tiempo)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </Layout>
   )
 }
