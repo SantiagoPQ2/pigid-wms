@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 // Recepcion
 import RecepcionDocumentos from './pages/recepcion/RecepcionDocumentos'
+import ControlCiego from './pages/recepcion/ControlCiego'
 // Deposito
 import Areas from './pages/deposito/Areas'
 import Ubicaciones from './pages/deposito/Ubicaciones'
@@ -18,6 +19,10 @@ import Despachos from './pages/despacho/Despachos'
 // Configuracion
 import { Articulos, Clientes, Proveedores } from './pages/configuracion/ConfigPages'
 import UsuariosTransportes from './pages/configuracion/UsuariosTransportes'
+import { TipoUbicacion, MotivoAjuste, Negocio, Impresoras } from './pages/configuracion/ConfigsSimples'
+// Reportes
+import ConsultarStock from './pages/reportes/ConsultarStock'
+import Estadisticas from './pages/reportes/Estadisticas'
 
 function LoadingScreen() {
   return (
@@ -66,7 +71,7 @@ export default function App() {
 
           {/* Recepcion */}
           <Route path="/recepcion/documentos" element={<Protected><RecepcionDocumentos /></Protected>} />
-          <Route path="/recepcion/control-ciego" element={<Protected><ComingSoon title="Control Ciego" /></Protected>} />
+          <Route path="/recepcion/control-ciego" element={<Protected><ControlCiego /></Protected>} />
 
           {/* Deposito */}
           <Route path="/deposito/areas" element={<Protected><Areas /></Protected>} />
@@ -90,16 +95,16 @@ export default function App() {
           <Route path="/configuracion/proveedores" element={<Protected><Proveedores /></Protected>} />
           <Route path="/configuracion/usuarios" element={<Protected><UsuariosTransportes /></Protected>} />
           <Route path="/configuracion/transportes" element={<Protected><UsuariosTransportes /></Protected>} />
+          <Route path="/configuracion/tipo-ubicacion" element={<Protected><TipoUbicacion /></Protected>} />
+          <Route path="/configuracion/motivo-ajuste" element={<Protected><MotivoAjuste /></Protected>} />
+          <Route path="/configuracion/negocio" element={<Protected><Negocio /></Protected>} />
+          <Route path="/configuracion/impresoras" element={<Protected><Impresoras /></Protected>} />
           <Route path="/configuracion/contenedores" element={<Protected><ComingSoon title="Contenedores" /></Protected>} />
-          <Route path="/configuracion/impresoras" element={<Protected><ComingSoon title="Impresoras" /></Protected>} />
-          <Route path="/configuracion/tipo-ubicacion" element={<Protected><ComingSoon title="Tipo de Ubicación" /></Protected>} />
-          <Route path="/configuracion/motivo-ajuste" element={<Protected><ComingSoon title="Motivo Ajuste" /></Protected>} />
-          <Route path="/configuracion/negocio" element={<Protected><ComingSoon title="Negocio" /></Protected>} />
 
           {/* Reportes */}
-          <Route path="/reportes/stock" element={<Protected><ComingSoon title="Consultar Stock" /></Protected>} />
+          <Route path="/reportes/stock" element={<Protected><ConsultarStock /></Protected>} />
+          <Route path="/reportes/estadisticas" element={<Protected><Estadisticas /></Protected>} />
           <Route path="/reportes/tareas-activas" element={<Protected><ComingSoon title="Tareas Activas" /></Protected>} />
-          <Route path="/reportes/estadisticas" element={<Protected><ComingSoon title="Estadísticas" /></Protected>} />
 
           {/* 404 */}
           <Route path="*" element={<Navigate to="/" replace />} />
