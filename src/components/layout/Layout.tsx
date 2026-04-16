@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import {
   Package, ChevronDown, LogOut, Settings, Truck,
-  ClipboardList, LayoutDashboard, Warehouse, PackageCheck,
-  Send, BarChart2, Menu, X, ChevronRight
+  ClipboardList, Warehouse, PackageCheck, Send, BarChart2,
+  Menu, X, ChevronRight, LayoutDashboard
 } from 'lucide-react'
 import NotifPanel from '../NotifPanel'
 
@@ -48,7 +48,6 @@ const navItems = [
   ]},
 ]
 
-// Bottom tabs para mobile (los más usados)
 const bottomTabs = [
   { label: 'Inicio', icon: LayoutDashboard, path: '/' },
   { label: 'Recepción', icon: PackageCheck, path: '/recepcion/documentos' },
@@ -64,11 +63,34 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { profile, signOut } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
+  const navRef = useRef<HTMLDivElement>(null)
+
+  // Cerrar dropdown al clickear fuera
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (navRef.current && !navRef.current.contains(e.target as Node)) {
+        setOpenMenu(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Cerrar dropdown al cambiar de ruta
+  useEffect(() => {
+    setOpenMenu(null)
+    setMobileOpen(false)
+    setMobileSection(null)
+  }, [location.pathname])
 
   const handleSignOut = async () => { await signOut(); navigate('/login') }
-
   const isActive = (path: string) => location.pathname === path
-  const isSectionActive = (children: {path:string}[]) => children.some(c => location.pathname.startsWith(c.path))
+  const isSectionActive = (children: { path: string }[]) =>
+    children.some(c => location.pathname.startsWith(c.path))
+
+  function toggleMenu(label: string) {
+    setOpenMenu(prev => prev === label ? null : label)
+  }
 
   return (
     <div className="min-h-screen bg-dark-900 font-sans">
@@ -82,32 +104,37 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <span className="text-white font-bold font-mono text-lg tracking-tight">PIGID</span>
         </Link>
 
-        <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
+        <nav ref={navRef} className="flex items-center gap-0.5 flex-1">
           {navItems.map(item => (
-            <div key={item.label} className="relative shrink-0">
+            <div key={item.label} className="relative">
               <button
-                onMouseEnter={() => setOpenMenu(item.label)}
-                onMouseLeave={() => setOpenMenu(null)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  isSectionActive(item.children) ? 'text-primary-400 bg-primary-900/20' :
-                  openMenu === item.label ? 'bg-dark-600 text-white' : 'text-gray-400 hover:text-white hover:bg-dark-700'
+                onClick={() => toggleMenu(item.label)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors select-none ${
+                  isSectionActive(item.children)
+                    ? 'text-primary-400 bg-primary-900/20'
+                    : openMenu === item.label
+                    ? 'bg-dark-600 text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-dark-700'
                 }`}
               >
                 <item.icon className="w-4 h-4" />
                 <span>{item.label}</span>
-                <ChevronDown className="w-3 h-3" />
+                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${openMenu === item.label ? 'rotate-180' : ''}`} />
               </button>
+
+              {/* Dropdown */}
               {openMenu === item.label && (
-                <div
-                  className="absolute top-full left-0 mt-1 w-52 bg-dark-700 border border-dark-500 rounded-xl shadow-2xl py-1 z-50"
-                  onMouseEnter={() => setOpenMenu(item.label)}
-                  onMouseLeave={() => setOpenMenu(null)}
-                >
+                <div className="absolute top-full left-0 mt-1 w-52 bg-dark-700 border border-dark-500 rounded-xl shadow-2xl py-1 z-[100]">
                   {item.children.map(child => (
-                    <Link key={child.path} to={child.path}
+                    <Link
+                      key={child.path}
+                      to={child.path}
                       className={`block px-4 py-2.5 text-sm transition-colors ${
-                        isActive(child.path) ? 'text-primary-400 bg-primary-900/20' : 'text-gray-300 hover:text-white hover:bg-dark-600'
-                      }`}>
+                        isActive(child.path)
+                          ? 'text-primary-400 bg-primary-900/20'
+                          : 'text-gray-300 hover:text-white hover:bg-dark-600'
+                      }`}
+                    >
                       {child.label}
                     </Link>
                   ))}
@@ -120,15 +147,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-3 shrink-0">
           <NotifPanel />
           <div className="h-5 w-px bg-dark-500" />
-          <div className="flex items-center gap-2">
-            <div className="text-right hidden lg:block">
-              <p className="text-xs font-medium text-white leading-none">{profile?.nombre || 'Usuario'}</p>
-              <p className="text-xs text-gray-500 mt-0.5 capitalize">{profile?.rol}</p>
-            </div>
-            <button onClick={handleSignOut} className="text-gray-500 hover:text-red-400 transition-colors" title="Salir">
-              <LogOut className="w-4 h-4" />
-            </button>
+          <div className="hidden lg:block text-right">
+            <p className="text-xs font-medium text-white leading-none">{profile?.nombre || 'Usuario'}</p>
+            <p className="text-xs text-gray-500 mt-0.5 capitalize">{profile?.rol}</p>
           </div>
+          <button onClick={handleSignOut} className="text-gray-500 hover:text-red-400 transition-colors p-1" title="Salir">
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
@@ -140,7 +165,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
           <span className="text-white font-bold font-mono text-base tracking-tight">PIGID</span>
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <NotifPanel />
           <button onClick={handleSignOut} className="text-gray-500 hover:text-red-400 transition-colors p-2">
             <LogOut className="w-4 h-4" />
@@ -150,10 +175,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* ── MOBILE SIDE DRAWER ──────────────────────────────── */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 md:hidden flex">
-          {/* Overlay */}
+        <div className="fixed inset-0 z-[200] md:hidden flex">
           <div className="absolute inset-0 bg-black/60" onClick={() => { setMobileOpen(false); setMobileSection(null) }} />
-          {/* Drawer */}
           <div className="relative w-72 bg-dark-800 h-full flex flex-col shadow-2xl overflow-y-auto">
             <div className="flex items-center justify-between px-4 py-4 border-b border-dark-700">
               <div className="flex items-center gap-2">
@@ -167,15 +190,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </button>
             </div>
 
-            {/* User info */}
             <div className="px-4 py-3 border-b border-dark-700 bg-dark-900/50">
               <p className="text-white text-sm font-medium">{profile?.nombre || 'Usuario'}</p>
               <p className="text-dark-400 text-xs capitalize">{profile?.rol}</p>
             </div>
 
-            {/* Nav */}
             <nav className="flex-1 py-2">
-              {/* Dashboard */}
               <Link to="/" onClick={() => setMobileOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
                   isActive('/') ? 'text-primary-400 bg-primary-900/20' : 'text-gray-300 hover:text-white hover:bg-dark-700'
@@ -231,7 +251,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* ── MOBILE BOTTOM TAB BAR ────────────────────────────── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-dark-800 border-t border-dark-600 flex safe-area-pb">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-dark-800 border-t border-dark-600 flex">
         {bottomTabs.map(tab => {
           const active = tab.path === '__menu__' ? mobileOpen : isActive(tab.path)
           return (
@@ -247,7 +267,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 }
               }}
               className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
-                active ? 'text-primary-400' : 'text-dark-400'
+                active ? 'text-primary-400' : 'text-dark-500 hover:text-dark-300'
               }`}
             >
               <tab.icon className="w-5 h-5" />
