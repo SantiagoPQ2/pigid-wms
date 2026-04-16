@@ -1,89 +1,36 @@
 # PIGID WMS
 
-Sistema de Gestión de Almacenes — React + Supabase + Netlify
+Sistema de Gestión de Depósito (WMS) - Clon funcional de Digip WMS.
 
 ## Stack
-
-- **Frontend**: React 18 + TypeScript + Tailwind CSS
-- **Base de datos**: Supabase (PostgreSQL)
-- **Auth**: Supabase Auth (JWT)
+- **Frontend**: React + TypeScript + Tailwind CSS
+- **DB**: Supabase (PostgreSQL)  
 - **Deploy**: Netlify
-- **Realtime**: Supabase Realtime
+- **URL**: https://pigid.netlify.app
 
-## Setup inicial
+## Setup
 
-### 1. Clonar y instalar
+### 1. Supabase
+Ejecutar en orden en el SQL Editor de Supabase:
+1. `supabase_schema.sql` — Schema base (ya ejecutado)
+2. `supabase_migrations_v2.sql` — Migraciones adicionales
+3. `sql/articulos_part1.sql` a `sql/articulos_part10.sql` — Importar artículos
 
-```bash
-git clone https://github.com/TU_USUARIO/pigid-wms.git
-cd pigid-wms
-npm install
+### 2. Variables de entorno (Netlify)
+```
+VITE_SUPABASE_URL=https://ivriqgapkcjqnbfvsqtz.supabase.co
+VITE_SUPABASE_ANON_KEY=...
 ```
 
-### 2. Variables de entorno
+### 3. PWA
+La app es instalable como PWA en Android e iOS.
+- Android: Chrome → Menú → "Agregar a pantalla de inicio"
+- iOS: Safari → Compartir → "Agregar a pantalla de inicio"
 
-Copiá `.env.example` a `.env` y completá con tus datos de Supabase:
-
-```bash
-cp .env.example .env
-```
-
-```env
-VITE_SUPABASE_URL=https://TU_PROJECT_ID.supabase.co
-VITE_SUPABASE_ANON_KEY=TU_ANON_KEY
-```
-
-### 3. Base de datos
-
-En el SQL Editor de Supabase, ejecutá el archivo `supabase_schema.sql` completo.
-
-### 4. Correr en local
-
-```bash
-npm run dev
-```
-
-### 5. Deploy en Netlify
-
-1. Conectá el repo de GitHub en Netlify
-2. Build command: `npm run build`
-3. Publish directory: `dist`
-4. Agregá las variables de entorno en Netlify > Site settings > Environment variables
-
-## Módulos implementados
-
-| Módulo | Estado |
-|---|---|
-| Login | ✅ |
-| Dashboard | ✅ |
-| Recepción > Documentos | ✅ |
-| Depósito > Áreas | ✅ |
-| Depósito > Tareas | ✅ |
-| Depósito > Movimientos | ✅ |
-| Depósito > Ajustes | ✅ |
-| Preparación > Preparaciones | ✅ con modal detalle completo |
-| Preparación > Pedidos | ✅ con modal detalle completo |
-| Despacho > Despachos | ✅ con modal + barras capacidad |
-| Configuración > Artículos | ✅ CRUD |
-| Configuración > Clientes | ✅ CRUD |
-| Configuración > Proveedores | ✅ CRUD |
-| Resto de módulos | 🚧 En construcción |
-
-## Estructura del proyecto
-
-```
-src/
-├── components/
-│   ├── layout/      # Layout principal con navbar
-│   └── ui/          # Componentes reutilizables (Button, Card, Table, Modal, etc.)
-├── context/         # AuthContext
-├── hooks/           # Custom hooks
-├── lib/             # Supabase client
-├── pages/           # Páginas por módulo
-│   ├── recepcion/
-│   ├── deposito/
-│   ├── preparacion/
-│   ├── despacho/
-│   └── configuracion/
-└── types/           # TypeScript types
-```
+## Módulos
+- **Recepción**: Documentos + Control Ciego
+- **Depósito**: Áreas, Ubicaciones, Reposición Picking, Tareas, Movimientos, Ajustes
+- **Preparación**: Preparaciones + Pedidos
+- **Despacho**: Despachos
+- **Configuración**: Artículos, Clientes, Proveedores, Contenedores, Impresoras, Usuarios, Transportes, Tipo Ubicación, Motivo Ajuste, Negocio
+- **Reportes**: Stock, Tareas en Tiempo Real, Estadísticas
