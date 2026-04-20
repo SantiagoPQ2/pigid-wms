@@ -140,7 +140,14 @@ async function procesarPedidoERP(
 ): Promise<{ nropedido: string; estado: EstadoPedido; error: string }> {
   
   // Intentar via netlify function proxy
-  const proxyUrl = '/.netlify/functions/erp-proxy'
+  const localProxy = 'http://localhost:5001'
+  const netlifyProxy = '/.netlify/functions/erp-proxy'
+  let proxyUrl = netlifyProxy
+  try {
+    const ping = await fetch(localProxy + '/ping', { signal: AbortSignal.timeout(1500) })
+    if (ping.ok) { proxyUrl = localProxy + '/cargar'; onLog('✅ Proxy local detectado en localhost:5001') }
+    else onLog('⚠️ Proxy local no disponible, usando Netlify Functions')
+  } catch { onLog('ℹ️ Usando Netlify Functions (el proxy local no está activo)') }
   
   const payload = {
     action: 'cargar_pedido',
@@ -180,9 +187,9 @@ async function procesarPedidoERP(
       }
     } else {
       // Proxy no disponible - modo simulación
-      onLog('⚠️ Proxy ERP no disponible - modo preview')
+      onLog('⚠️ El proxy (local o Netlify) no pudo conectar al ERP')
       onLog(`Payload preparado: cliente=${pedido.idcliente}, ${pedido.renglones.length} artículos`)
-      return { nropedido: 'PREVIEW', estado: 'advertencia', error: 'Proxy ERP no configurado - instalar netlify function' }
+        return { nropedido: '', estado: 'error', error: 'No se pudo conectar al ERP. Iniciá el proxy local: python scripts/erp_proxy_local.py' }
     }
   } catch (err) {
     onLog(`❌ Error de conexión: ${err}`)
