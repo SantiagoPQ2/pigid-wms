@@ -15,29 +15,19 @@ function jsonResp(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: corsHeaders });
 }
 
-// ── Login via Spring Security (igual que la edge function que funciona) ────────
 async function loginAndGetCookie(): Promise<string> {
   const form = new URLSearchParams();
   form.set("j_username", USER);
   form.set("j_password", PASS);
-
   const resp = await fetch(`${BASE}/static/auth/j_spring_security_check`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": "Mozilla/5.0",
-      "Accept": "application/json, text/plain, */*",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0", "Accept": "application/json, text/plain, */*" },
     body: form.toString(),
     redirect: "manual",
   });
-
   const setCookie = resp.headers.get("set-cookie") ?? "";
   const match = setCookie.match(/JSESSIONID=([^;]+)/i);
-  if (!match?.[1]) {
-    const txt = await resp.text().catch(() => "");
-    throw new Error(`Login fallido. Status=${resp.status}. Body=${txt.slice(0, 300)}`);
-  }
+  if (!match?.[1]) throw new Error(`Login fallido. Status=${resp.status}`);
   return `JSESSIONID=${match[1]}`;
 }
 
@@ -54,72 +44,64 @@ function makeHeaders(cookie: string): Record<string, string> {
   };
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
 function normInt(v: unknown, d = 0): number {
   if (v === null || v === undefined || v === "" || v === "null") return d;
-  const n = parseInt(String(v));
-  return isNaN(n) ? d : n;
+  const n = parseInt(String(v)); return isNaN(n) ? d : n;
 }
-
 function normFloat(v: unknown, d = 0): number {
   if (v === null || v === undefined || v === "" || v === "null") return d;
-  const n = parseFloat(String(v).replace(",", "."));
-  return isNaN(n) ? d : n;
+  const n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? d : n;
 }
-
 function parseFecha(f: string): string {
-  // D/M/YYYY o DD/MM/YYYY → YYYY-MM-DD
   const p = f.split("/");
   return `${p[2]}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`;
 }
-
 function buscarVendedor(raw: Record<string, unknown>, idfv: number) {
   const vendedores = (raw?.dsDatosPedido as any)?.eVendedorFuerzaVenta ?? [];
   for (const v of vendedores) {
-    if (normInt(v.idfuerzaventas, -1) === idfv && v.defecto && !v.anulado)
-      return { c_perso: normInt(v.c_perso, 17), d_perso: v.d_perso ?? "" };
+    if (normInt(v.idfuerzaventas,-1)===idfv && v.defecto && !v.anulado)
+      return { c_perso: normInt(v.c_perso,17), d_perso: v.d_perso ?? "" };
   }
   for (const v of vendedores) {
-    if (normInt(v.idfuerzaventas, -1) === idfv && !v.anulado)
-      return { c_perso: normInt(v.c_perso, 17), d_perso: v.d_perso ?? "" };
+    if (normInt(v.idfuerzaventas,-1)===idfv && !v.anulado)
+      return { c_perso: normInt(v.c_perso,17), d_perso: v.d_perso ?? "" };
   }
   return { c_perso: 17, d_perso: "" };
 }
 
-// ── Obtener datos del cliente ──────────────────────────────────────────────────
 async function obtenerCliente(cookie: string, idcliente: number, idclialias: number) {
-  const url = `${BASE}/web/api/pedidos/obtenerDatosPedido?picli=${idcliente}&pialias=${idclialias}`;
-  const resp = await fetch(url, { headers: makeHeaders(cookie) });
+  const resp = await fetch(
+    `${BASE}/web/api/pedidos/obtenerDatosPedido?picli=${idcliente}&pialias=${idclialias}`,
+    { headers: makeHeaders(cookie) }
+  );
   if (!resp.ok) throw new Error(`obtenerDatosPedido error ${resp.status}`);
-  
   const raw = await resp.json() as Record<string, any>;
   const cliente = raw.dsDatosPedido.eClientes[0] as Record<string, any>;
 
-  // Enriquecer con eClialias (igual que el script Python que funciona)
+  // Enriquecer con eClialias
   try {
     const alias = raw.dsDatosPedido.eClialias[0] as Record<string, any>;
-    for (const [k, v] of Object.entries(alias)) {
-      if (!(k in cliente) || cliente[k] === null || cliente[k] === "" || cliente[k] === 0) {
-        cliente[k] = v;
-      }
+    for (const [k,v] of Object.entries(alias)) {
+      if (!(k in cliente)||cliente[k]===null||cliente[k]===""||cliente[k]===0) cliente[k]=v;
     }
-  } catch { /* sin alias */ }
+  } catch {}
 
   // Resolver vendedor si falta
-  const idfv = normInt(cliente.idfuerzaventas, 1);
-  if ([null, "", 0, "0", "null"].includes(cliente.c_perso)) {
-    const vend = buscarVendedor(raw, idfv);
+  const idfv = normInt(cliente.idfuerzaventas,1);
+  if ([null,"",0,"0","null"].includes(cliente.c_perso)) {
+    const vend = buscarVendedor(raw,idfv);
     cliente.c_perso = vend.c_perso;
     cliente.d_perso = vend.d_perso;
   }
 
-  return cliente;
+  // Guardar articulos de la respuesta para extraer precio/stock
+  const articulos = raw.dsDatosPedido?.eArticulosCabecera ?? [];
+  return { cliente, articulos };
 }
 
-// ── Construir cabecera (fiel al script Python) ─────────────────────────────────
-function construirCabecera(cliente: Record<string, any>, fecentre: string, overrides: Record<string, unknown>) {
-  const ov: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(overrides ?? {})) ov[k.toLowerCase()] = v;
+function construirCabecera(cliente: Record<string,any>, fecentre: string, overrides: Record<string,unknown>) {
+  const ov: Record<string,unknown> = {};
+  for (const [k,v] of Object.entries(overrides??{})) ov[k.toLowerCase()]=v;
   const fec = parseFecha(fecentre);
   return {
     idcliente:      normInt(cliente.idcliente),
@@ -156,97 +138,140 @@ function construirCabecera(cliente: Record<string, any>, fecentre: string, overr
   };
 }
 
-// ── Construir lineas (fiel al script Python que funciona) ──────────────────────
-function construirLineas(renglones: any[]) {
+function construirLineas(renglones: any[], articulosData: any[]) {
+  // Buscar precio y stock para cada artículo desde eArticulosCabecera
+  const artMap: Record<string, any> = {};
+  for (const a of articulosData) {
+    const cod = String(a.codart ?? "");
+    if (cod) artMap[cod] = a;
+  }
+
   return renglones.map((r, i) => {
     const bonifpct = normFloat(r.bonifpct);
     const motivo   = normInt(r.motivo);
     if (bonifpct && !motivo) throw new Error(`Art ${r.codart}: bonifpct requiere motivo`);
+
+    const codartStr = String(r.codart);
+    const artInfo   = artMap[codartStr] ?? {};
+
+    // Usar precio y stock de eArticulosCabecera si están disponibles
+    const precio  = normFloat(artInfo.precio ?? artInfo.preciofinal ?? 0);
+    const stkcant = normFloat(artInfo.stkcant ?? artInfo.stock ?? 0);
+    const cant    = normFloat(r.cant);
+
     return {
-      idlinea: i+1, idlinint: i+1,
-      tipolin: "", concepto: "", codpromo: "", cambio: "",
-      inmodif: false,
-      codart:  String(r.codart),        // STRING — crítico
-      codbarra:"", descrip: "",
-      idempmatriz: 1, buscadorart: "",
-      pallets: 0,
-      cant:    String(normFloat(r.cant)), // STRING — crítico
-      resto:0, bultosReal: normFloat(r.cant),
-      bonif:0, bonifpct,
-      motivo:  motivo ? String(motivo) : "", // STRING vacío si no hay
-      anulado:false, retenido:false, motretenido:"",
-      confirmada:false, checkLineasAnuladas:false,
-      ordenweb: i+1,
-      precio:0, precioFinal:"",
-      bltxplt:1, presentacion:1,
-      exento:false, pesable:true, peso:0,
-      rangod:0, rangoh:0, combo:false, idpadre:0,
-      visibilidad:"LineaVisible",
-      abierta:false, expandido:false, comodat:false, activofijo:false,
-      numerosserie:"", numerosactivo:"",
-      tasaint:0, tasaiva:21, internosfij:0,
-      stkcant:0, stkresto:0, stock:"0.000", stockbkp:"",
-      iva1:0, iva2:0, internos:0, per212:0, per3337:0,
-      perib:0, netogra:0, nograva:0, netoper:0,
-      bruto:0, neto:0, totlin:0,
+      idlinea:   i+1,
+      idlinint:  i+1,
+      tipolin:   "",
+      concepto:  "",
+      codpromo:  "",
+      cambio:    "",
+      inmodif:   false,
+      codart:    codartStr,      // STRING
+      codbarra:  "",
+      descrip:   artInfo.descrip ?? artInfo.nombre ?? "",
+      idempmatriz: 1,
+      buscadorart: "",
+      pallets:   0,
+      cant:      String(cant),  // STRING
+      resto:     0,
+      bultosReal: cant,
+      bonif:     0,
+      bonifpct,
+      motivo:    motivo ? String(motivo) : "",  // STRING vacío si no hay
+      anulado:   false,
+      retenido:  false,
+      motretenido: "",
+      confirmada: false,
+      checkLineasAnuladas: false,
+      ordenweb:  i+1,
+      precio,                   // precio real del artículo
+      precioFinal: "",
+      bltxplt:   1,
+      presentacion: 1,
+      exento:    false,
+      pesable:   true,
+      peso:      0,
+      rangod:    normFloat(artInfo.rangod, 0),
+      rangoh:    normFloat(artInfo.rangoh, 0),
+      combo:     false,
+      idpadre:   0,
+      visibilidad: "LineaVisible",
+      abierta:   false,
+      expandido: false,
+      comodat:   false,
+      activofijo: false,
+      numerosserie:  "",
+      numerosactivo: "",
+      tasaint:   0,
+      tasaiva:   21,
+      internosfij: 0,
+      stkcant,                  // stock real del artículo
+      stkresto:  0,
+      stock:     stkcant.toFixed(3),
+      stockbkp:  "",
+      iva1:0, iva2:0, internos:0, per212:0, per3337:0, perib:0,
+      netogra:0, nograva:0, netoper:0,
+      bruto:0,
+      neto:      precio * cant, // neto real
+      totlin:    0,
       xblt_neto:0, xblt_final:0, xuni_neto:0, xuni_final:0,
-      estado:"", derivada:false, idlineacredito:1,
-      idpresentacion:0, vacio:false, tmpDetlin:[],
+      estado:    "",
+      derivada:  false,
+      idlineacredito: 1,
+      idpresentacion: 0,
+      vacio:     false,
+      tmpDetlin: [],
     };
   });
 }
 
-// ── confirmarPedido con ReadableStream (Deno no tiene stream=True pero sí body) ─
-async function confirmarPedido(cookie: string, payload: unknown): Promise<Record<string, any>> {
+async function confirmarPedido(cookie: string, payload: unknown): Promise<Record<string,any>> {
   const resp = await fetch(`${BASE}/web/api/pedidos/confirmarPedido`, {
     method: "POST",
     headers: makeHeaders(cookie),
     body: JSON.stringify(payload),
   });
-
   if (!resp.ok) {
-    const txt = await resp.text().catch(() => "");
-    throw new Error(`confirmarPedido error ${resp.status}: ${txt.slice(0, 300)}`);
+    const t = await resp.text().catch(()=>"");
+    throw new Error(`confirmarPedido error ${resp.status}: ${t.slice(0,300)}`);
   }
-
-  // Leer el body completo (Deno maneja chunked automáticamente)
   const txt = await resp.text();
   if (!txt) throw new Error("confirmarPedido no devolvió body");
-  
-  try {
-    return JSON.parse(txt);
-  } catch {
-    throw new Error(`confirmarPedido no devolvió JSON válido: ${txt.slice(0, 300)}`);
-  }
+  try { return JSON.parse(txt); }
+  catch { throw new Error(`JSON inválido: ${txt.slice(0,300)}`); }
 }
 
-// ── Handler principal ──────────────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonResp({ error: "Método no permitido" }, 405);
-
   const logs: string[] = [];
 
   try {
-    const body = await req.json();
-    const pedido = body.pedido as Record<string, any>;
-    if (!pedido) throw new Error("Falta el campo 'pedido' en el body");
+    const body   = await req.json();
+    const pedido = body.pedido as Record<string,any>;
+    if (!pedido) throw new Error("Falta el campo 'pedido'");
 
     // 1. Login
     logs.push("Conectando al ERP...");
     const cookie = await loginAndGetCookie();
     logs.push("Login OK");
 
-    // 2. Datos del cliente
+    // 2. Datos del cliente + artículos con precio/stock
     const idcliente  = normInt(pedido.idcliente);
     const idclialias = normInt(pedido.idclialias, 1);
     logs.push(`Obteniendo cliente ${idcliente}...`);
-    const cliente = await obtenerCliente(cookie, idcliente, idclialias);
-    logs.push(`Cliente: ${cliente.nomcli ?? idcliente}`);
+    const { cliente, articulos } = await obtenerCliente(cookie, idcliente, idclialias);
+    logs.push(`Cliente: ${cliente.nomcli ?? idcliente} — ${articulos.length} artículos en catálogo`);
 
-    // 3. Construir estructuras
+    // 3. Construir estructuras con precio/stock real
     const cabecera = construirCabecera(cliente, pedido.fecentre, pedido.overrides ?? {});
-    const lineas   = construirLineas(pedido.renglones ?? []);
+    const lineas   = construirLineas(pedido.renglones ?? [], articulos);
+
+    // Log precio/stock cargado
+    for (const l of lineas) {
+      logs.push(`  Art ${l.codart}: precio=${l.precio} stock=${l.stkcant}`);
+    }
 
     const dsInicial = {
       tmpmascara: [cabecera],
@@ -255,7 +280,7 @@ serve(async (req) => {
       tmpreldoc:  [],
     };
 
-    // 4. PASO 1: verificar (plsoloverifica=True)
+    // 4. Paso 1: verificar (plsoloverifica=True)
     logs.push("Verificando pedido (paso 1/2)...");
     const respVer = await confirmarPedido(cookie, {
       dsTmpmascara:   dsInicial,
@@ -272,7 +297,7 @@ serve(async (req) => {
     if (!dsVer) throw new Error("La verificación no devolvió dsTmpmascara");
     logs.push(`Verificado OK — promos: ${ePromos.length}`);
 
-    // 5. PASO 2: confirmar/grabar (plsoloverifica=False)
+    // 5. Paso 2: confirmar/grabar (plsoloverifica=False)
     logs.push("Grabando pedido (paso 2/2)...");
     const respConf = await confirmarPedido(cookie, {
       dsTmpmascara:   dsVer,
@@ -281,14 +306,13 @@ serve(async (req) => {
       plReaplica:     false,
     });
 
-    // Advertencias no fatales
     for (const e of (respConf.error ?? [])) {
       if (e.tipo === "E") logs.push(`Advertencia: ${e.mensaje}`);
     }
 
     // Extraer nropedido
-    const dsFinal   = respConf.dsTmpmascara ?? {};
-    const mascara   = dsFinal.tmpMascara ?? dsFinal.tmpmascara ?? [{}];
+    const dsFinal  = respConf.dsTmpmascara ?? {};
+    const mascara  = dsFinal.tmpMascara ?? dsFinal.tmpmascara ?? [{}];
     const nropedido = mascara[0]?.nropedido ?? "?";
 
     logs.push(`Pedido #${nropedido} grabado OK`);
