@@ -2,14 +2,9 @@
   command = "npm run build"
   publish = "dist"
 
-[build.environment]
-  VITE_SUPABASE_URL = ""
-  VITE_SUPABASE_ANON_KEY = ""
-
-# Variables ERP - configurar en Netlify Dashboard > Environment Variables
-# ERP_BASE_URL = "http://appserver29.dyndns.org:8094"
-# ERP_USUARIO  = "tu_usuario"
-# ERP_PASSWORD = "tu_password"
+# NO incluir VITE_SUPABASE_URL ni VITE_SUPABASE_ANON_KEY aquí
+# Esas variables se configuran en Netlify Dashboard > Environment Variables
+# para que no queden expuestas en el repo
 
 [functions]
   directory = "netlify/functions"
