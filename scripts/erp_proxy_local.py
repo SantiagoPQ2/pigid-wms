@@ -1,252 +1,346 @@
 #!/usr/bin/env python3
 """
-PIGID WMS - Proxy Local ERP Chess
-===================================
-Corre en tu máquina (que tiene acceso al ERP interno).
-El frontend de PIGID detecta automáticamente si está activo.
+PIGID WMS - Proxy Local ERP Chess v2
+======================================
+Usa el flujo REAL que funciona:
+  1. Login via /web/api/chess/v1/auth/login  (devuelve sessionId como Cookie)
+  2. GET obtenerDatosPedido
+  3. POST confirmarPedido (plsoloverifica=True)   <- verificar
+  4. POST confirmarPedido (plsoloverifica=False)  <- confirmar/guardar
 
-INSTALACIÓN (solo primera vez):
+INSTALACIÓN:
     pip install flask flask-cors requests
 
 USO:
     python scripts/erp_proxy_local.py
 
-Queda escuchando en http://localhost:5001
-Mientras esté activo, PIGID usará este proxy para cargar pedidos al ERP.
+Queda en http://localhost:5001 — PIGID lo detecta automáticamente.
 """
 
+from __future__ import annotations
+import os, json
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
-from datetime import datetime
+from requests.exceptions import ChunkedEncodingError
 
 app = Flask(__name__)
-CORS(app)  # Permite requests desde pigid.netlify.app
+CORS(app)
 
-# ─── Configuración ────────────────────────────────────────────────────────────
-import os
-
-BASE_URL = os.environ.get("ERP_BASE_URL", "http://appserver29.dyndns.org:8094")
-USUARIO  = os.environ.get("ERP_USUARIO",  "dangulo")
+# ── Configuración ──────────────────────────────────────────────────────────────
+BASE     = os.environ.get("ERP_BASE_URL", "http://appserver29.dyndns.org:8094")
+USUARIO  = os.environ.get("ERP_USUARIO",  "DANGULO")
 PASSWORD = os.environ.get("ERP_PASSWORD", "Chelsea2009.")
 
 HEADERS_JSON = {
-    "Content-Type": "application/json",
-    "Accept": "application/json",
+    "Accept":       "application/json, text/plain, */*",
+    "Content-Type": "application/json;charset=UTF-8",
+    "Connection":   "close",
+    "User-Agent":   "Mozilla/5.0",
+    "X-Requested-With": "XMLHttpRequest",
+    "Origin":   BASE,
+    "Referer":  BASE + "/",
 }
 
-MOTIVOS_BONIF = {1: "[B", 2: "CLIENTE ESPECIAL"}
+# ── Sesión con caché ───────────────────────────────────────────────────────────
+_cookie_str: str | None = None
+_cookie_ts:  float      = 0
+SESSION_TTL = 300  # segundos
 
-# ─── Sesión ERP (se reutiliza entre pedidos del mismo batch) ──────────────────
-_session = None
-_session_ts = None
-SESSION_TTL = 300  # segundos antes de re-loguearse
-
-def get_session():
-    global _session, _session_ts
+def get_cookie() -> str:
+    global _cookie_str, _cookie_ts
     ahora = datetime.now().timestamp()
-    if _session and _session_ts and (ahora - _session_ts) < SESSION_TTL:
-        return _session
-    
+    if _cookie_str and (ahora - _cookie_ts) < SESSION_TTL:
+        return _cookie_str
+
     print(f"  [ERP] Login como {USUARIO}...")
-    sess = requests.Session()
-    r = sess.post(
-        f"{BASE_URL}/static/auth/j_spring_security_check",
-        data={"j_username": USUARIO, "j_password": PASSWORD},
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        allow_redirects=True, timeout=30,
+    r = requests.post(
+        f"{BASE}/web/api/chess/v1/auth/login",
+        json={"usuario": USUARIO, "password": PASSWORD},
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Connection": "close",
+            "User-Agent": "Mozilla/5.0",
+        },
+        timeout=30,
     )
-    if "JSESSIONID" not in sess.cookies:
-        raise Exception(f"Login fallido (status {r.status_code})")
-    
+    r.raise_for_status()
+    data = r.json()
+    sid = data.get("sessionId")
+    if not sid:
+        raise RuntimeError(f"No se recibió sessionId. Respuesta: {data}")
+
+    _cookie_str = f"sessionId={sid}"
+    _cookie_ts  = ahora
+    print(f"  [ERP] Login OK — sessionId: {sid[:20]}...")
+    return _cookie_str
+
+
+def make_headers(cookie: str) -> dict:
+    return {**HEADERS_JSON, "Cookie": cookie}
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+def norm_int(v, d=0) -> int:
     try:
-        sess.post(f"{BASE_URL}/web/api/sesion/gestionarURL",
-                  json={}, headers=HEADERS_JSON, timeout=30, stream=True).close()
-    except: pass
-    
-    _session = sess
-    _session_ts = ahora
-    print(f"  [ERP] Login OK")
-    return sess
+        return int(v) if v not in (None, "", "null") else d
+    except: return d
 
+def norm_float(v, d=0.0) -> float:
+    try:
+        return float(v) if v not in (None, "", "null") else d
+    except: return d
 
-def erp_request(session, method, endpoint, body=None):
-    r = session.request(
-        method, f"{BASE_URL}{endpoint}",
-        json=body, headers=HEADERS_JSON, timeout=(10, 60)
-    )
-    if not r.ok:
-        raise Exception(f"ERP error {r.status_code}: {r.text[:200]}")
-    return r.json()
+def hoy_arg() -> str:
+    return datetime.now(timezone(timedelta(hours=-3))).strftime("%Y-%m-%d")
 
-
-def armar_renglones(renglones):
-    result = []
-    for i, r in enumerate(renglones, 1):
-        bonifpct = float(r.get("bonifpct") or 0)
-        motivo   = int(r.get("motivo") or 0)
-        if bonifpct and not motivo:
-            raise Exception(f"Artículo {r['codart']}: bonifpct requiere motivo")
-        result.append({
-            "idcabint": 0, "idempresa": 0, "iddocumento": "", "letra": "",
-            "serie": 0, "nrodoc": 0, "idlinea": i, "idlinint": i,
-            "codart": int(r["codart"]), "pallets": 0,
-            "cant": float(r["cant"]), "resto": 0, "cantorig": 0, "restoorig": 0,
-            "peso": 0, "precio": 0, "preciofinal": 0, "flete": 0,
-            "bonifpct": bonifpct, "bonif": 0, "motivo2": motivo,
-            "iva1": 0, "iva2": 0, "per3337": 0, "per212": 0, "perib": 0,
-            "internos": 0, "bruto": 0, "netogra": 0, "nograva": 0, "exonerado": 0,
-            "noauto": False, "descrip": "", "tipolin": "P", "codpromo": 0,
-            "inmodif": False, "derivada": False, "ndocpadre": 0, "idpadre": 0,
-            "expandido": False, "numerosserie": "", "numerosactivo": "",
-            "estado": "", "msj": "", "imprime": True, "cuentayorden": False,
-            "codprovcyo": 0, "totlin": 0, "idorigen": "", "anulado": False,
-        })
-    return result
-
-
-def armar_payload(cliente, fecentre, renglones, overrides):
-    ov = {k.lower(): v for k, v in (overrides or {}).items()}
-    # Parsear fecha D/M/YYYY o DD/MM/YYYY
+def parsear_fecha(fecentre: str) -> str:
+    """D/M/YYYY o DD/MM/YYYY → YYYY-MM-DD"""
     partes = fecentre.split("/")
     d, m, y = partes[0].zfill(2), partes[1].zfill(2), partes[2]
-    fec = f"{y}-{m}-{d}"
-    hoy = datetime.today().strftime("%Y-%m-%d")
+    return f"{y}-{m}-{d}"
 
-    mascara = {
-        "idcliente":      cliente["idcliente"],
-        "idclialias":     cliente["idclialias"],
+def buscar_vendedor(raw: dict, idfuerzaventas: int) -> dict:
+    vendedores = raw.get("dsDatosPedido", {}).get("eVendedorFuerzaVenta", [])
+    for v in vendedores:
+        if norm_int(v.get("idfuerzaventas"), -1) == idfuerzaventas and v.get("defecto") and not v.get("anulado"):
+            return {"c_perso": norm_int(v.get("c_perso"), 17), "d_perso": v.get("d_perso", "")}
+    for v in vendedores:
+        if norm_int(v.get("idfuerzaventas"), -1) == idfuerzaventas and not v.get("anulado"):
+            return {"c_perso": norm_int(v.get("c_perso"), 17), "d_perso": v.get("d_perso", "")}
+    return {"c_perso": 17, "d_perso": ""}
+
+
+def post_chunked(url: str, headers: dict, payload: dict) -> dict:
+    """POST tolerante a ChunkedEncodingError (igual que el script que funciona)."""
+    chunks = []
+    with requests.post(url, headers=headers, json=payload, timeout=120, stream=True) as r:
+        r.raise_for_status()
+        try:
+            for chunk in r.iter_content(8192):
+                if chunk: chunks.append(chunk)
+        except ChunkedEncodingError:
+            pass
+
+    texto = b"".join(chunks).decode("utf-8", errors="replace")
+    if not texto:
+        raise RuntimeError(f"POST {url} no devolvió body")
+    return json.loads(texto)
+
+
+def obtener_cliente(cookie: str, idcliente: int, idclialias: int) -> tuple[dict, dict]:
+    r = requests.get(
+        f"{BASE}/web/api/pedidos/obtenerDatosPedido",
+        headers=make_headers(cookie),
+        params={"picli": idcliente, "pialias": idclialias},
+        timeout=30,
+    )
+    r.raise_for_status()
+    raw = r.json()
+
+    cliente = raw["dsDatosPedido"]["eClientes"][0]
+
+    # Enriquecer con datos de alias
+    try:
+        alias = raw["dsDatosPedido"]["eClialias"][0]
+        for k, v in alias.items():
+            if k not in cliente or cliente.get(k) in (None, "", 0, "0"):
+                cliente[k] = v
+    except: pass
+
+    # Resolver vendedor
+    idfv = norm_int(cliente.get("idfuerzaventas"), 1)
+    if cliente.get("c_perso") in (None, "", 0, "0", "null"):
+        vend = buscar_vendedor(raw, idfv)
+        cliente["c_perso"] = vend["c_perso"]
+        cliente["d_perso"] = vend["d_perso"]
+
+    return cliente, raw
+
+
+def construir_cabecera(cliente: dict, fecentre: str, overrides: dict) -> dict:
+    ov = {k.lower(): v for k, v in (overrides or {}).items()}
+    fec = parsear_fecha(fecentre)
+    return {
+        "idcliente":      norm_int(cliente.get("idcliente")),
+        "idclialias":     norm_int(cliente.get("idclialias")),
         "nomcli":         cliente.get("nomcli", ""),
         "nropedido":      0,
-        "iddocumento":    ov.get("iddocumento", "PRVTA"),
-        "letra":          cliente.get("letra", "P"),
-        "idComp":         cliente.get("idComp", "P"),
-        "codlipre":       ov.get("codlipre", 1),
-        "dslistapre":     cliente.get("dslistapre", ""),
-        "tipopago":       ov.get("tipopago", 2),
-        "dstipopago":     cliente.get("dstipopago", ""),
-        "tipoiva":        cliente.get("tipoiva", "NC"),
+        "iddocumento":    ov.get("iddocumento", cliente.get("iddocumento", "PRVTA")),
+        "letra":          "P",
+        "idComp":         "P",
+        "codlipre":       norm_int(ov.get("codlipre", cliente.get("codlipre", 1))),
+        "dslistapre":     "LISTA 1",
+        "tipopago":       norm_int(ov.get("tipopago", cliente.get("tipopago", 2))),
+        "dstipopago":     "CONTADO",
+        "tipoiva":        cliente.get("tipoiva", "RI"),
         "idrechazo": "", "dsmotivo": "",
-        "fechafac":       hoy,
+        "fechafac":       fec,
         "fecentre":       fec,
         "fecvence":       fec,
-        "idempresa":      ov.get("idempresa", 1),
+        "idempresa":      norm_int(ov.get("idempresa", 1)),
         "firma":          "VAFOOD SRL",
-        "idSucur":        ov.get("idsucur", 1),
-        "desSucur":       cliente.get("desSucur", ""),
-        "idDepo":         int(ov.get("iddepo", 1)),
-        "desDepo":        cliente.get("desDepo", ""),
-        "idfuerzaventas": ov.get("idfuerzaventas", 1),
-        "dsfuerzaventas": cliente.get("dsfuerzaventas", ""),
-        "c_perso":        ov.get("c_perso", 0),
+        "idSucur":        norm_int(ov.get("idsucur", 1)),
+        "desSucur":       "CASA CENTRAL",
+        "idDepo":         norm_int(ov.get("iddepo", 1)),
+        "desDepo":        "CASA CENTRAL",
+        "idfuerzaventas": norm_int(ov.get("idfuerzaventas", cliente.get("idfuerzaventas", 1))),
+        "dsfuerzaventas": "ESQUEMA UNICO",
+        "c_perso":        norm_int(ov.get("c_perso", cliente.get("c_perso", 17))),
         "d_perso":        cliente.get("d_perso", ""),
         "idmovcomercial": None,
-        "lineacreditoid": cliente.get("lineacreditoid", 1),
+        "lineacreditoid": norm_int(cliente.get("lineacreditoid", 1)),
         "bruto": 0, "bonif": 0, "internos": 0, "iva1": 0, "iva2": 0,
         "per212": 0, "per3337": 0, "perib": 0, "netogra": 0,
         "netoper": 0, "nograva": 0, "valtot": 0,
     }
-    return {
-        "dsTmpmascara": {
-            "tmpmascara": [mascara],
-            "tmplineas": armar_renglones(renglones),
-            "tmpdetrel": [], "tmpreldoc": [],
-        },
-        "ePromosApli": [], "plsoloverifica": False, "plReaplica": False,
-    }
 
 
-# ─── Endpoints ────────────────────────────────────────────────────────────────
+def construir_lineas(renglones: list) -> list:
+    """
+    Shape idéntico al del script que funciona (construir_linea_ui).
+    Usa plsoloverifica=True en el primer llamado, igual que el script.
+    """
+    lineas = []
+    for i, r in enumerate(renglones, 1):
+        bonifpct = norm_float(r.get("bonifpct"))
+        motivo   = norm_int(r.get("motivo"))
+        if bonifpct and not motivo:
+            raise ValueError(f"Artículo {r['codart']}: bonifpct requiere motivo")
+        lineas.append({
+            "idlinea":   i, "idlinint": i,
+            "tipolin":   "", "concepto": "", "codpromo": "", "cambio": "",
+            "inmodif":   False,
+            "codart":    str(r["codart"]),
+            "codbarra":  "", "descrip": "",
+            "idempmatriz": 1, "buscadorart": "",
+            "pallets":   0,
+            "cant":      str(norm_float(r["cant"])),
+            "resto":     0, "bultosReal": norm_float(r["cant"]),
+            "bonif":     0, "bonifpct": bonifpct,
+            "motivo":    str(motivo) if motivo else "",
+            "anulado": False, "retenido": False, "motretenido": "",
+            "confirmada": False, "checkLineasAnuladas": False, "ordenweb": i,
+            "precio": 0, "precioFinal": "", "bltxplt": 1, "presentacion": 1,
+            "exento": False, "pesable": True, "peso": 0,
+            "rangod": 0, "rangoh": 0, "combo": False, "idpadre": 0,
+            "visibilidad": "LineaVisible", "abierta": False, "expandido": False,
+            "comodat": False, "activofijo": False,
+            "numerosserie": "", "numerosactivo": "",
+            "tasaint": 0, "tasaiva": 21, "internosfij": 0,
+            "stkcant": 0, "stkresto": 0, "stock": "0.000", "stockbkp": "",
+            "iva1": 0, "iva2": 0, "internos": 0, "per212": 0, "per3337": 0,
+            "perib": 0, "netogra": 0, "nograva": 0, "netoper": 0,
+            "bruto": 0, "neto": 0, "totlin": 0,
+            "xblt_neto": 0, "xblt_final": 0, "xuni_neto": 0, "xuni_final": 0,
+            "estado": "", "derivada": False, "idlineacredito": 1,
+            "idpresentacion": 0, "vacio": False, "tmpDetlin": [],
+            # campos del CSV original
+            "motivo2": motivo,
+        })
+    return lineas
+
+
+# ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @app.route("/ping")
 def ping():
-    """El frontend usa este endpoint para detectar si el proxy está activo."""
-    return jsonify({"ok": True, "version": "1.0", "erp": BASE_URL})
+    return jsonify({"ok": True, "version": "2.0", "erp": BASE, "usuario": USUARIO})
 
 
 @app.route("/cargar", methods=["POST"])
 def cargar_pedido():
-    """Recibe un pedido del frontend y lo graba en el ERP."""
-    data = request.get_json()
+    data   = request.get_json()
     pedido = data.get("pedido", {})
-    logs = []
+    logs   = []
 
     try:
-        # 1. Login / reutilizar sesión
+        # 1. Sesión
         logs.append("Conectando al ERP...")
-        session = get_session()
-        logs.append("Sesión ERP OK")
+        cookie = get_cookie()
+        logs.append("Sesión OK")
 
         # 2. Datos del cliente
         idcliente  = pedido["idcliente"]
         idclialias = pedido.get("idclialias", 1)
-        logs.append(f"Obteniendo datos del cliente {idcliente}...")
-        resp = erp_request(session, "GET",
-            f"/web/api/pedidos/obtenerDatosPedido?picli={idcliente}&pialias={idclialias}")
-        if resp.get("error"):
-            raise Exception(f"Error ERP cliente: {resp['error']}")
-        clientes = resp.get("dsDatosPedido", {}).get("eClientes", [])
-        if not clientes:
-            raise Exception(f"Cliente {idcliente} no encontrado")
-        cliente = clientes[0]
-        logs.append(f"Cliente: {cliente.get('nomcli', '')}")
+        logs.append(f"Obteniendo cliente {idcliente}...")
+        cliente, _ = obtener_cliente(cookie, idcliente, idclialias)
+        logs.append(f"Cliente: {cliente.get('nomcli', idcliente)}")
 
-        # 3. Armar payload
-        payload = armar_payload(
-            cliente, pedido["fecentre"],
-            pedido.get("renglones", []),
-            pedido.get("overrides", {})
-        )
+        # 3. Construir estructuras
+        cabecera = construir_cabecera(cliente, pedido["fecentre"], pedido.get("overrides", {}))
+        lineas   = construir_lineas(pedido.get("renglones", []))
 
-        # 4. F8 - precios y promociones
-        logs.append("Aplicando precios (F8)...")
-        payload_f8 = {**payload, "plReaplica": True}
-        resp_f8 = erp_request(session, "POST", "/web/api/pedidos/confirmarPedido", payload_f8)
-        errores_f8 = [e for e in (resp_f8.get("error") or []) if e.get("tipo") == "E"]
-        if errores_f8:
-            raise Exception("Error F8: " + ", ".join(e.get("mensaje","") for e in errores_f8))
-        logs.append("Precios aplicados OK")
-
-        # 5. F5 - grabar pedido
-        logs.append("Grabando pedido (F5)...")
-        payload_f5 = {
-            "dsTmpmascara": resp_f8["dsTmpmascara"],
-            "ePromosApli":  resp_f8.get("ePromosApli", []),
-            "plsoloverifica": False, "plReaplica": False,
+        ds_base = {
+            "tmpmascara": [cabecera],
+            "tmplineas":  lineas,
+            "tmpdetrel":  [],
+            "tmpreldoc":  [],
         }
-        resp_f5 = erp_request(session, "POST", "/web/api/pedidos/confirmarPedido", payload_f5)
 
-        # Advertencias F5 (no fatales)
-        for e in (resp_f5.get("error") or []):
+        url_confirmar = f"{BASE}/web/api/pedidos/confirmarPedido"
+        hdrs = make_headers(cookie)
+
+        # 4. Paso 1: verificar (plsoloverifica=True)
+        logs.append("Verificando pedido (paso 1/2)...")
+        payload_ver = {
+            "dsTmpmascara":  ds_base,
+            "ePromosApli":   [],
+            "plsoloverifica": True,
+            "plReaplica":    False,
+        }
+        resp_ver = post_chunked(url_confirmar, hdrs, payload_ver)
+
+        errores_ver = [e for e in (resp_ver.get("error") or []) if e.get("tipo") == "E"]
+        if errores_ver:
+            raise RuntimeError("Error verificar: " + ", ".join(e.get("mensaje","") for e in errores_ver))
+        logs.append(f"Verificado OK — promos: {len(resp_ver.get('ePromosApli') or [])}")
+
+        ds_confirmado = resp_ver.get("dsTmpmascara")
+        e_promos      = resp_ver.get("ePromosApli", [])
+        if not ds_confirmado:
+            raise RuntimeError("La verificación no devolvió dsTmpmascara")
+
+        # 5. Paso 2: confirmar / grabar (plsoloverifica=False)
+        logs.append("Grabando pedido (paso 2/2)...")
+        payload_conf = {
+            "dsTmpmascara":   ds_confirmado,
+            "ePromosApli":    e_promos,
+            "plsoloverifica": False,
+            "plReaplica":     False,
+        }
+        resp_conf = post_chunked(url_confirmar, hdrs, payload_conf)
+
+        # Advertencias no fatales
+        for e in (resp_conf.get("error") or []):
             if e.get("tipo") == "E":
                 logs.append(f"⚠️ {e.get('mensaje','')}")
 
+        # Extraer nropedido
+        ds_final = resp_conf.get("dsTmpmascara") or {}
         nropedido = (
-            (resp_f5.get("dsTmpmascara") or {})
-            .get("tmpMascara", [{}])[0]
-            .get("nropedido")
-            or (resp_f5.get("dsTmpmascara") or {})
-            .get("tmpmascara", [{}])[0]
+            (ds_final.get("tmpMascara") or ds_final.get("tmpmascara") or [{}])[0]
             .get("nropedido", "?")
         )
-        logs.append(f"✅ Pedido #{nropedido} grabado")
+        logs.append(f"✅ Pedido #{nropedido} grabado correctamente")
 
         return jsonify({"success": True, "nropedido": str(nropedido), "logs": logs})
 
-    except Exception as e:
-        logs.append(f"❌ {e}")
-        return jsonify({"success": False, "error": str(e), "logs": logs})
+    except Exception as exc:
+        logs.append(f"❌ {exc}")
+        return jsonify({"success": False, "error": str(exc), "logs": logs, "nropedido": ""})
 
 
-# ─── Main ─────────────────────────────────────────────────────────────────────
+# ── Main ───────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("=" * 55)
-    print("  PIGID WMS - Proxy Local ERP Chess")
-    print(f"  ERP: {BASE_URL}")
+    print("=" * 60)
+    print("  PIGID WMS — Proxy Local ERP Chess v2")
+    print(f"  ERP:     {BASE}")
     print(f"  Usuario: {USUARIO}")
-    print("=" * 55)
     print("  Escuchando en http://localhost:5001")
     print("  PIGID detectará este proxy automáticamente.")
     print("  Ctrl+C para detener.")
-    print("=" * 55)
+    print("=" * 60)
     app.run(host="0.0.0.0", port=5001, debug=False)
