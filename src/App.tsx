@@ -28,6 +28,7 @@ import Contenedores from './pages/configuracion/Contenedores'
 import ConsultarStock from './pages/reportes/ConsultarStock'
 import Estadisticas from './pages/reportes/Estadisticas'
 import TareasRealtime from './pages/reportes/TareasRealtime'
+import CargaPedidos from './pages/CargaPedidos'
 
 function LoadingScreen() {
   return (
@@ -98,7 +99,10 @@ export default function App() {
             <Route path="/reportes/tareas-activas" element={<Protected><TareasRealtime /></Protected>} />
 
             {/* 404 */}
-            <Route path="*" element={<NotFound />} />
+            {/* ERP */}
+          <Route path="/erp/carga-pedidos" element={<Protected><CargaPedidos /></Protected>} />
+
+          <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
       </NotifProvider>
