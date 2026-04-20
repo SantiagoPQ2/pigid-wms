@@ -44,6 +44,7 @@ const ERP_USER = import.meta.env.VITE_ERP_USUARIO || ''
 const ERP_PASS = import.meta.env.VITE_ERP_PASSWORD || ''
 
 const COLS_OBLIGATORIAS = ['idcliente', 'idclialias', 'fecentre', 'codart', 'cant']
+const COL_NPEDIDO = 'npedido'
 const COLS_CABECERA_OPT = ['tipopago', 'iddocumento', 'idempresa', 'idsucur', 'iddepo', 'idfuerzaventas', 'c_perso', 'codlipre']
 const COLS_RENGLON_OPT = ['bonifpct', 'motivo']
 const MOTIVOS_VALIDOS: Record<string, string> = { '1': '[B', '2': 'CLIENTE ESPECIAL' }
@@ -67,7 +68,8 @@ function agruparPedidos(rows: Record<string, string>[], headers: string[]): Pedi
   const mapa = new Map<string, PedidoAgrupado>()
   
   for (const row of rows) {
-    const key = `${row.idcliente}_${row.idclialias}_${row.fecentre}`
+    const np = row[COL_NPEDIDO] || ''
+    const key = np ? `n${np}_${row.idcliente}_${row.idclialias}_${row.fecentre}` : `${row.idcliente}_${row.idclialias}_${row.fecentre}`
     
     if (!mapa.has(key)) {
       const overrides: Record<string, string> = {}
@@ -77,7 +79,7 @@ function agruparPedidos(rows: Record<string, string>[], headers: string[]): Pedi
       }
       mapa.set(key, {
         key, idcliente: row.idcliente, idclialias: row.idclialias,
-        fecentre: row.fecentre, renglones: [], overrides, errores: []
+        fecentre: row.fecentre, npedido: row[COL_NPEDIDO] || '', renglones: [], overrides, errores: []
       })
     }
     
@@ -329,7 +331,7 @@ function FilaPreview({ pedido, resultado, index }: {
                 {resultado?.log && resultado.log.length > 0 && (
                   <div>
                     <p className="text-dark-400 text-xs font-medium uppercase tracking-wider mb-1">Log de ejecución</p>
-                    {resultado.log.map((l, i) => (
+                    {resultado.log.slice(-4).map((l, i) => (
                       <p key={i} className="text-dark-300 text-xs font-mono">{l}</p>
                     ))}
                   </div>
@@ -582,16 +584,7 @@ export default function CargaPedidos() {
               </div>
             )}
 
-            {/* Aviso proxy */}
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg px-4 py-3 mb-4 text-sm text-blue-300 flex items-start gap-2">
-              <Eye className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>
-                <strong>Credenciales ERP:</strong> configurar en Netlify → Environment Variables:
-                <code className="ml-1 text-xs bg-dark-700 px-1 rounded">VITE_ERP_USUARIO</code>,
-                <code className="ml-1 text-xs bg-dark-700 px-1 rounded">VITE_ERP_PASSWORD</code>,
-                <code className="ml-1 text-xs bg-dark-700 px-1 rounded">VITE_ERP_BASE_URL</code>
-              </span>
-            </div>
+            
 
             {/* Tabla de preview */}
             <div className="card rounded-xl overflow-hidden">
