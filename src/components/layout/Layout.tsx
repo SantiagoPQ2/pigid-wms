@@ -45,6 +45,7 @@ const navItems = [
     { label: 'Consultar Stock', path: '/reportes/stock' },
     { label: 'Tareas Activas', path: '/reportes/tareas-activas' },
     { label: 'Estadísticas', path: '/reportes/estadisticas' },
+    { label: 'Carga Pedidos ERP', path: '/erp/carga-pedidos' },
   ]},
 ]
 
