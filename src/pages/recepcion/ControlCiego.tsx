@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
+import BarcodeScanner from '../../components/BarcodeScanner'
 import Layout from '../../components/Layout'
+import { Camera } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 interface Documento {
@@ -26,6 +28,8 @@ type Etapa = 'seleccion' | 'conteo' | 'resultado'
 
 export default function ControlCiego() {
   const [etapa, setEtapa] = useState<Etapa>('seleccion')
+  const [scannerAbierto, setScannerAbierto] = useState(false)
+  const [codigoEscaneado, setCodigoEscaneado] = useState('')
   const [documentos, setDocumentos] = useState<Documento[]>([])
   const [loading, setLoading] = useState(true)
   const [docSeleccionado, setDocSeleccionado] = useState<Documento | null>(null)
@@ -124,7 +128,16 @@ export default function ControlCiego() {
             <button onClick={reiniciar} className="text-dark-400 hover:text-white transition-colors">← Volver</button>
           )}
           <div>
+            <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-white">Control Ciego</h1>
+            <button
+              onClick={() => setScannerAbierto(true)}
+              className="flex items-center gap-2 bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              <Camera className="w-4 h-4" />
+              Escanear
+            </button>
+          </div>
             <p className="text-dark-400 text-sm mt-1">Recepción sin cantidades esperadas visibles</p>
           </div>
         </div>
@@ -290,6 +303,26 @@ export default function ControlCiego() {
           </div>
         )}
       </div>
+      {scannerAbierto && (
+        <BarcodeScanner
+          titulo="Escanear artículo"
+          placeholder="Código de barras o artículo..."
+          onScan={handleScan}
+          onClose={() => setScannerAbierto(false)}
+        />
+      )}
     </Layout>
   )
 }
+  const handleScan = (codigo: string) => {
+    setScannerAbierto(false)
+    setCodigoEscaneado(codigo)
+    // Buscar el item con ese código y hacer foco
+    const input = document.querySelector(`input[data-codigo="${codigo}"]`) as HTMLInputElement
+    if (input) {
+      input.focus()
+      input.select()
+    }
+  }
+
+
