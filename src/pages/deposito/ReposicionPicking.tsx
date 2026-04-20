@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import BarcodeScanner from '../../components/BarcodeScanner'
 import Layout from '../../components/Layout'
 import { supabase } from '../../lib/supabase'
 
@@ -38,6 +39,7 @@ const ESTADO_COLOR: Record<EstadoRepo, string> = {
 
 export default function ReposicionPicking() {
   const [items, setItems] = useState<ItemReposicion[]>([])
+  const [scannerAbierto, setScannerAbierto] = useState(false)
   const [loading, setLoading] = useState(true)
   const [filtroEstado, setFiltroEstado] = useState<EstadoRepo | ''>('')
   const [filtroPrioridad, setFiltroPrioridad] = useState<number | ''>('')
@@ -138,7 +140,16 @@ export default function ReposicionPicking() {
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
+            <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-white">Reposición de Picking</h1>
+            <button
+              onClick={() => setScannerAbierto(true)}
+              className="flex items-center gap-2 bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              <Camera className="w-4 h-4" />
+              Escanear
+            </button>
+          </div>
             <p className="text-dark-400 text-sm mt-1">Gestión de reposición desde reserva hacia picking</p>
           </div>
           <div className="flex gap-2">
@@ -334,6 +345,25 @@ export default function ReposicionPicking() {
           </div>
         )}
       </div>
+      {scannerAbierto && (
+        <BarcodeScanner
+          titulo="Escanear artículo"
+          placeholder="Código del artículo..."
+          onScan={handleScan}
+          onClose={() => setScannerAbierto(false)}
+        />
+      )}
     </Layout>
   )
 }
+  const handleScan = (codigo: string) => {
+    setScannerAbierto(false)
+    // Filtrar la lista para mostrar solo el artículo escaneado
+    const input = document.getElementById('buscar-reposicion') as HTMLInputElement
+    if (input) {
+      input.value = codigo
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+  }
+
+
