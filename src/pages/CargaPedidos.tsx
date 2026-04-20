@@ -138,61 +138,75 @@ async function procesarPedidoERP(
   pedido: PedidoAgrupado,
   onLog: (msg: string) => void
 ): Promise<{ nropedido: string; estado: EstadoPedido; error: string }> {
-  
-  // Intentar via netlify function proxy
-  const localProxy = 'http://localhost:5001'
-  const netlifyProxy = '/.netlify/functions/erp-proxy'
-  let proxyUrl = netlifyProxy
-  try {
-    const ping = await fetch(localProxy + '/ping', { signal: AbortSignal.timeout(1500) })
-    if (ping.ok) { proxyUrl = localProxy + '/cargar'; onLog('✅ Proxy local detectado en localhost:5001') }
-    else onLog('⚠️ Proxy local no disponible, usando Netlify Functions')
-  } catch { onLog('ℹ️ Usando Netlify Functions (el proxy local no está activo)') }
-  
+
+  // URL de la Supabase Edge Function (corre en los servidores de Supabase
+  // que SÍ tienen acceso al ERP interno via internet)
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+  const edgeFnUrl = `${supabaseUrl}/functions/v1/cargar-pedidos`
+
   const payload = {
-    action: 'cargar_pedido',
-    erp_base: ERP_BASE,
-    usuario: ERP_USER,
-    password: ERP_PASS,
     pedido: {
-      idcliente: parseInt(pedido.idcliente),
+      idcliente:  parseInt(pedido.idcliente),
       idclialias: parseInt(pedido.idclialias),
-      fecentre: pedido.fecentre,
-      renglones: pedido.renglones.map(r => ({
-        codart: parseInt(r.codart),
-        cant: parseFloat(r.cant),
-        bonifpct: r.bonifpct ? parseFloat(r.bonifpct) : 0,
-        motivo: r.motivo ? parseInt(r.motivo) : 0
+      fecentre:   pedido.fecentre,
+      renglones:  pedido.renglones.map(r => ({
+        codart:   r.codart,
+        cant:     r.cant,
+        bonifpct: r.bonifpct || '0',
+        motivo:   r.motivo   || '0',
       })),
-      overrides: pedido.overrides
+      overrides: pedido.overrides,
     }
   }
-  
+
   try {
     onLog('Conectando con el ERP...')
-    const res = await fetch(proxyUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    
-    if (res.ok) {
-      const data = await res.json()
-      if (data.success) {
-        onLog(`✅ Pedido #${data.nropedido} grabado correctamente`)
-        return { nropedido: String(data.nropedido), estado: 'ok', error: '' }
-      } else {
-        onLog(`❌ Error ERP: ${data.error}`)
-        return { nropedido: '', estado: 'error', error: data.error }
+
+    // Primero intentar proxy local (si está corriendo)
+    let usandoLocal = false
+    try {
+      const ping = await fetch('http://localhost:5001/ping', {
+        signal: AbortSignal.timeout(1500)
+      })
+      if (ping.ok) {
+        usandoLocal = true
+        onLog('Proxy local detectado en localhost:5001')
       }
+    } catch { /* usar edge function */ }
+
+    let res: Response
+    if (usandoLocal) {
+      res = await fetch('http://localhost:5001/cargar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
     } else {
-      // Proxy no disponible - modo simulación
-      onLog('⚠️ El proxy (local o Netlify) no pudo conectar al ERP')
-      onLog(`Payload preparado: cliente=${pedido.idcliente}, ${pedido.renglones.length} artículos`)
-        return { nropedido: '', estado: 'error', error: 'No se pudo conectar al ERP. Iniciá el proxy local: python scripts/erp_proxy_local.py' }
+      onLog('Usando Supabase Edge Function...')
+      res = await fetch(edgeFnUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+          'apikey': supabaseKey,
+        },
+        body: JSON.stringify(payload)
+      })
     }
+
+    const data = await res.json()
+
+    if (data.logs) data.logs.forEach((l: string) => onLog(l))
+
+    if (data.success) {
+      return { nropedido: String(data.nropedido), estado: 'ok', error: '' }
+    } else {
+      return { nropedido: '', estado: 'error', error: data.error || 'Error desconocido' }
+    }
+
   } catch (err) {
-    onLog(`❌ Error de conexión: ${err}`)
+    onLog(`Error de conexión: ${err}`)
     return { nropedido: '', estado: 'error', error: String(err) }
   }
 }
