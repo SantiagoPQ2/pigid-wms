@@ -18,6 +18,7 @@ interface PedidoAgrupado {
   idcliente: string
   idclialias: string
   fecentre: string
+  npedido: string
   renglones: RenglonCSV[]
   overrides: Record<string, string>
   errores: string[]
