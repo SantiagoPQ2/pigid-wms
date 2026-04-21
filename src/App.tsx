@@ -29,6 +29,7 @@ import ConsultarStock from './pages/reportes/ConsultarStock'
 import Estadisticas from './pages/reportes/Estadisticas'
 import TareasRealtime from './pages/reportes/TareasRealtime'
 import CargaPedidos from './pages/CargaPedidos'
+import PatagoniaPreparaciones from './pages/PatagoniaPreparaciones'
 
 function LoadingScreen() {
   return (
@@ -102,6 +103,7 @@ export default function App() {
             {/* ERP */}
           <Route path="/erp/carga-pedidos" element={<Protected><CargaPedidos /></Protected>} />
 
+          <Route path="/reportes/patagonia" element={<Protected><PatagoniaPreparaciones /></Protected>} />
           <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
