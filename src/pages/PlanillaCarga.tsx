@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import Layout from '../components/Layout'
 import { Upload, FileText, Download, AlertCircle, Truck, Package, RefreshCw } from 'lucide-react'
 
-interface Fila { Transporte: string; CodigoArticulo: string; Descripcion: string; Bultos: number }
+interface Fila { ID: string; Transporte: string; CodigoArticulo: string; Descripcion: string; Bultos: number }
 
 // ── Parser de texto plano (misma lógica que el script Python) ─────────────────
 function isPlanillaHeader(lines: string[]): boolean {
@@ -46,7 +46,10 @@ function parsearPagina(lines: string[], transporte: string): Fila[] {
     // Limpiar fecha de vencimiento si quedó en la descripción
     desc = desc.replace(/\s+\d{2}\/\d{2}\/\d{2,4}\s*$/, '').trim()
 
-    filas.push({ Transporte: transporte, CodigoArticulo: sku, Descripcion: desc, Bultos: bultos })
+    // ID = nro_transporte + codigo (ej: "10_1199")
+    const nroTransporte = transporte.match(/^(\d+)/)?.[1] || transporte
+    const id = nroTransporte + '_' + sku
+    filas.push({ ID: id, Transporte: transporte, CodigoArticulo: sku, Descripcion: desc, Bultos: bultos })
   }
   return filas
 }
@@ -206,7 +209,7 @@ export default function PlanillaCarga() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Planilla de Carga</h1>
-            <p className="text-dark-400 text-sm mt-1">Subí el PDF para extraer los datos por transporte · Procesado 100% en el browser</p>
+
           </div>
           {(listo || archivo) && (
             <button onClick={resetear} className="flex items-center gap-2 text-dark-400 hover:text-white text-sm transition-colors">
@@ -299,9 +302,17 @@ export default function PlanillaCarga() {
                   Detalle ({detalle.length})
                 </button>
               </div>
-              <input type="text" placeholder="Filtrar..." value={filtro}
-                onChange={e => setFiltro(e.target.value)}
-                className="input-field flex-1 max-w-xs text-sm" />
+              <div className="relative flex-1 max-w-sm">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                <input type="text" placeholder="Buscar transporte, código o artículo..." value={filtro}
+                  onChange={e => setFiltro(e.target.value)}
+                  className="w-full bg-dark-800 border border-dark-600 hover:border-dark-500 focus:border-primary-500 focus:ring-1 focus:ring-primary-500/30 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-dark-500 outline-none transition-all" />
+                {filtro && (
+                  <button onClick={() => setFiltro('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-400 hover:text-white transition-colors">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                )}
+              </div>
               <div className="flex gap-2 ml-auto">
                 <button onClick={() => exportarCSV(resumenF, 'resumen_planilla.csv')}
                   className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
@@ -321,6 +332,7 @@ export default function PlanillaCarga() {
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-dark-800">
                       <tr className="border-b border-dark-700">
+                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">ID</th>
                         <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Transporte</th>
                         <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Código</th>
                         <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Descripción</th>
@@ -330,6 +342,7 @@ export default function PlanillaCarga() {
                     <tbody>
                       {resumenF.map((f, i) => (
                         <tr key={i} className="border-b border-dark-800 hover:bg-dark-800/40">
+                          <td className="px-4 py-2 text-dark-300 font-mono text-xs font-semibold">{f.ID}</td>
                           <td className="px-4 py-2 text-blue-400 text-xs font-medium">{f.Transporte}</td>
                           <td className="px-4 py-2 text-primary-400 font-mono font-semibold">{f.CodigoArticulo}</td>
                           <td className="px-4 py-2 text-white">{f.Descripcion}</td>
@@ -349,6 +362,7 @@ export default function PlanillaCarga() {
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-dark-800">
                       <tr className="border-b border-dark-700">
+                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">ID</th>
                         <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Transporte</th>
                         <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Código</th>
                         <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Descripción</th>
@@ -358,6 +372,7 @@ export default function PlanillaCarga() {
                     <tbody>
                       {detalleF.map((f, i) => (
                         <tr key={i} className="border-b border-dark-800 hover:bg-dark-800/40">
+                          <td className="px-4 py-2 text-dark-300 font-mono text-xs font-semibold">{f.ID}</td>
                           <td className="px-4 py-2 text-blue-400 text-xs font-medium">{f.Transporte}</td>
                           <td className="px-4 py-2 text-primary-400 font-mono font-semibold">{f.CodigoArticulo}</td>
                           <td className="px-4 py-2 text-white">{f.Descripcion}</td>
