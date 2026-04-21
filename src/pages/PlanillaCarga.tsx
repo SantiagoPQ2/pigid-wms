@@ -132,7 +132,14 @@ export default function PlanillaCarga() {
     setResultado(null)
     try {
       const arrayBuffer = await file.arrayBuffer()
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
+      // Convertir a base64 en chunks para evitar stack overflow con PDFs grandes
+      const uint8 = new Uint8Array(arrayBuffer)
+      let binary = ''
+      const chunkSize = 8192
+      for (let i = 0; i < uint8.length; i += chunkSize) {
+        binary += String.fromCharCode(...uint8.subarray(i, i + chunkSize))
+      }
+      const base64 = btoa(binary)
       const res = await fetch(SUPA_URL + '/functions/v1/parsear-planilla', {
         method: 'POST',
         headers: {
