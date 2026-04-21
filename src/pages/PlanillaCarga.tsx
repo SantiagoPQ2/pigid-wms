@@ -46,18 +46,16 @@ function parsearPagina(lines: string[], transporte: string): Fila[] {
     // Limpiar fecha de vencimiento si quedó en la descripción
     desc = desc.replace(/\s+\d{2}\/\d{2}\/\d{2,4}\s*$/, '').trim()
 
-    // ID = nro_transporte + codigo (ej: "10_1199")
-    const nroTransporte = transporte.match(/^(\d+)/)?.[1] || transporte
-    const id = nroTransporte + '_' + sku
-    filas.push({ ID: id, Transporte: transporte, CodigoArticulo: sku, Descripcion: desc, Bultos: bultos })
+    const nroT = transporte.match(/^(\d+)/)?.[1] || transporte
+    filas.push({ ID: nroT + sku, Transporte: transporte, CodigoArticulo: sku, Descripcion: desc, Bultos: bultos })
   }
   return filas
 }
 
 // ── Exportar CSV ──────────────────────────────────────────────────────────────
 function exportarCSV(filas: Fila[], nombre: string) {
-  const headers = 'Transporte;CodigoArticulo;Descripcion;Bultos'
-  const rows = filas.map(f => `${f.Transporte};${f.CodigoArticulo};${f.Descripcion};${f.Bultos}`)
+  const headers = 'ID;Transporte;CodigoArticulo;Descripcion;Bultos'
+  const rows = filas.map(f => `${f.ID};${f.Transporte};${f.CodigoArticulo};${f.Descripcion};${f.Bultos}`)
   const blob = new Blob(['\uFEFF' + headers + '\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a'); a.href = url; a.download = nombre; a.click()
@@ -303,10 +301,10 @@ export default function PlanillaCarga() {
                 </button>
               </div>
               <div className="relative flex-1 max-w-sm">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                 <input type="text" placeholder="Buscar transporte, código o artículo..." value={filtro}
                   onChange={e => setFiltro(e.target.value)}
-                  className="w-full bg-dark-800 border border-dark-600 hover:border-dark-500 focus:border-primary-500 focus:ring-1 focus:ring-primary-500/30 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-dark-500 outline-none transition-all" />
+                  className="w-full bg-dark-800 border border-dark-600 hover:border-dark-500 focus:border-primary-500 rounded-lg pl-9 pr-8 py-2 text-sm text-white placeholder-dark-500 outline-none transition-all" />
                 {filtro && (
                   <button onClick={() => setFiltro('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-400 hover:text-white transition-colors">
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -342,7 +340,7 @@ export default function PlanillaCarga() {
                     <tbody>
                       {resumenF.map((f, i) => (
                         <tr key={i} className="border-b border-dark-800 hover:bg-dark-800/40">
-                          <td className="px-4 py-2 text-dark-300 font-mono text-xs font-semibold">{f.ID}</td>
+                          <td className="px-4 py-2 text-dark-300 font-mono text-xs">{f.ID}</td>
                           <td className="px-4 py-2 text-blue-400 text-xs font-medium">{f.Transporte}</td>
                           <td className="px-4 py-2 text-primary-400 font-mono font-semibold">{f.CodigoArticulo}</td>
                           <td className="px-4 py-2 text-white">{f.Descripcion}</td>
@@ -372,7 +370,7 @@ export default function PlanillaCarga() {
                     <tbody>
                       {detalleF.map((f, i) => (
                         <tr key={i} className="border-b border-dark-800 hover:bg-dark-800/40">
-                          <td className="px-4 py-2 text-dark-300 font-mono text-xs font-semibold">{f.ID}</td>
+                          <td className="px-4 py-2 text-dark-300 font-mono text-xs">{f.ID}</td>
                           <td className="px-4 py-2 text-blue-400 text-xs font-medium">{f.Transporte}</td>
                           <td className="px-4 py-2 text-primary-400 font-mono font-semibold">{f.CodigoArticulo}</td>
                           <td className="px-4 py-2 text-white">{f.Descripcion}</td>
