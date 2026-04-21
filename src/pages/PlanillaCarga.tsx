@@ -1,175 +1,203 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import Layout from '../components/Layout'
-import { Upload, FileText, Download, AlertCircle, CheckCircle, Package, Truck, RefreshCw, X } from 'lucide-react'
+import { Upload, FileText, Download, AlertCircle, Truck, Package, RefreshCw } from 'lucide-react'
 
-interface FilaDetalle {
-  Transporte: string
-  CodigoArticulo: string
-  Descripcion: string
-  Bultos: number
+interface Fila { Transporte: string; CodigoArticulo: string; Descripcion: string; Bultos: number }
+
+// ── Parser de texto plano (misma lógica que el script Python) ─────────────────
+function isPlanillaHeader(lines: string[]): boolean {
+  const head = lines.slice(0, 20).join(' ').toUpperCase().replace(/\s+/g, ' ')
+  return head.includes('PLANILLA') && head.includes('CARGA') &&
+    !head.includes('COMPOSICION DE CARGA') && !head.includes('PLANILLA ADMINISTRATIVA')
 }
 
-interface FilaResumen {
-  Transporte: string
-  CodigoArticulo: string
-  Descripcion: string
-  Bultos: number
+function extraerTransporte(lines: string[]): string {
+  for (const line of lines.slice(0, 15)) {
+    const m = line.match(/Transporte:\s*(.+?)(?:\s*\|\s*Chofer|\s*\|\s*Dep|$)/)
+    if (m) return m[1].trim()
+  }
+  return 'Sin transporte'
 }
 
-interface ResultadoParseo {
-  ok: boolean
-  error?: string
-  stats?: { transportes: number; filas: number; skus: number; paginas_procesadas: number }
-  detalle?: FilaDetalle[]
-  resumen?: FilaResumen[]
+function parsearPagina(lines: string[], transporte: string): Fila[] {
+  const filas: Fila[] = []
+  let inTable = false
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (!line) continue
+    if (/^SKU\s+Descripci/i.test(line)) { inTable = true; continue }
+    if (!inTable) continue
+    if (/T\s*O\s*T\s*A\s*L/.test(line) || line.includes('Estado del Transporte')) { inTable = false; continue }
+
+    // Línea artículo: SKU DESC [VENC] BULTOS [UNIDS] [PESO]
+    const m = line.match(/^(\d{2,})\s+(.+?)\s+(\d{1,5})(?:\s+[\d,.]+)*\s*$/)
+    if (!m) continue
+
+    const sku = m[1]
+    let desc = m[2].trim()
+    const bultos = parseInt(m[3])
+
+    if (/^\d+\s*-\s*[A-Z]/.test(desc)) continue  // "001 - CONGELADOS"
+    if (/total/i.test(desc)) continue
+    if (bultos > 9999 || bultos === 0) continue
+    if (desc.length < 2) continue
+
+    // Limpiar fecha de vencimiento si quedó en la descripción
+    desc = desc.replace(/\s+\d{2}\/\d{2}\/\d{2,4}\s*$/, '').trim()
+
+    filas.push({ Transporte: transporte, CodigoArticulo: sku, Descripcion: desc, Bultos: bultos })
+  }
+  return filas
 }
 
-function TablaDetalle({ filas }: { filas: FilaDetalle[] }) {
-  const [filtro, setFiltro] = useState('')
-  const filtradas = filtro
-    ? filas.filter(f => f.Transporte?.toLowerCase().includes(filtro.toLowerCase()) ||
-        f.CodigoArticulo?.includes(filtro) || f.Descripcion?.toLowerCase().includes(filtro.toLowerCase()))
-    : filas
-
-  return (
-    <div>
-      <div className="px-4 py-3 border-b border-dark-700 flex items-center gap-3">
-        <input type="text" placeholder="Filtrar por transporte, código o descripción..."
-          value={filtro} onChange={e => setFiltro(e.target.value)}
-          className="input-field flex-1 text-sm" />
-        <span className="text-dark-400 text-sm">{filtradas.length} filas</span>
-      </div>
-      <div className="overflow-x-auto max-h-96">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-dark-800">
-            <tr className="border-b border-dark-700">
-              <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase font-medium">Transporte</th>
-              <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase font-medium">Código</th>
-              <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase font-medium">Descripción</th>
-              <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase font-medium">Bultos</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtradas.map((f, i) => (
-              <tr key={i} className="border-b border-dark-800 hover:bg-dark-800/40">
-                <td className="px-4 py-2 text-blue-400 text-xs font-medium">{f.Transporte || '—'}</td>
-                <td className="px-4 py-2 text-primary-400 font-mono font-semibold">{f.CodigoArticulo}</td>
-                <td className="px-4 py-2 text-white">{f.Descripcion}</td>
-                <td className="px-4 py-2 text-right text-white font-semibold">{f.Bultos}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-function TablaResumen({ filas }: { filas: FilaResumen[] }) {
-  const transportes = [...new Set(filas.map(f => f.Transporte))].filter(Boolean)
-  return (
-    <div className="overflow-x-auto max-h-96">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-dark-800">
-          <tr className="border-b border-dark-700">
-            <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase font-medium">Transporte</th>
-            <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase font-medium">Código</th>
-            <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase font-medium">Descripción</th>
-            <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase font-medium">Bultos Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {transportes.map(t => {
-            const rows = filas.filter(f => f.Transporte === t)
-            const totalBultos = rows.reduce((s, r) => s + r.Bultos, 0)
-            return rows.map((f, i) => (
-              <tr key={t+i} className="border-b border-dark-800 hover:bg-dark-800/40">
-                {i === 0 && (
-                  <td className="px-4 py-2 text-blue-400 text-xs font-bold align-top" rowSpan={rows.length}>
-                    {f.Transporte}
-                    <div className="text-dark-500 font-normal mt-0.5">{rows.length} items · {totalBultos} bultos</div>
-                  </td>
-                )}
-                <td className="px-4 py-2 text-primary-400 font-mono font-semibold">{f.CodigoArticulo}</td>
-                <td className="px-4 py-2 text-white">{f.Descripcion}</td>
-                <td className="px-4 py-2 text-right text-white font-semibold">{f.Bultos}</td>
-              </tr>
-            ))
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function exportarCSV(filas: FilaDetalle[] | FilaResumen[], nombre: string) {
-  const headers = Object.keys(filas[0] || {}).join(';')
-  const rows = filas.map(f => Object.values(f).join(';')).join('\n')
-  const blob = new Blob(['\uFEFF' + headers + '\n' + rows], { type: 'text/csv;charset=utf-8;' })
+// ── Exportar CSV ──────────────────────────────────────────────────────────────
+function exportarCSV(filas: Fila[], nombre: string) {
+  const headers = 'Transporte;CodigoArticulo;Descripcion;Bultos'
+  const rows = filas.map(f => `${f.Transporte};${f.CodigoArticulo};${f.Descripcion};${f.Bultos}`)
+  const blob = new Blob(['\uFEFF' + headers + '\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = nombre; a.click()
+  const a = document.createElement('a'); a.href = url; a.download = nombre; a.click()
   URL.revokeObjectURL(url)
 }
 
+// ── Componente principal ──────────────────────────────────────────────────────
 export default function PlanillaCarga() {
   const [dragging, setDragging] = useState(false)
   const [archivo, setArchivo] = useState<File | null>(null)
-  const [cargando, setCargando] = useState(false)
-  const [resultado, setResultado] = useState<ResultadoParseo | null>(null)
-  const [tab, setTab] = useState<'detalle' | 'resumen'>('resumen')
+  const [progreso, setProgreso] = useState({ actual: 0, total: 0, estado: '' })
+  const [error, setError] = useState('')
+  const [detalle, setDetalle] = useState<Fila[]>([])
+  const [resumen, setResumen] = useState<Fila[]>([])
+  const [tab, setTab] = useState<'resumen' | 'detalle'>('resumen')
+  const [filtro, setFiltro] = useState('')
+  const cancelRef = useRef(false)
 
-  const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || ''
-  const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+  const procesarPDF = async (file: File) => {
+    setArchivo(file); setError(''); setDetalle([]); setResumen([])
+    cancelRef.current = false
+    setProgreso({ actual: 0, total: 0, estado: 'Cargando pdf.js...' })
 
-  const procesarArchivo = async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setResultado({ ok: false, error: 'El archivo debe ser un PDF.' })
-      return
-    }
-    setArchivo(file)
-    setCargando(true)
-    setResultado(null)
     try {
-      const arrayBuffer = await file.arrayBuffer()
-      // Convertir a base64 en chunks para evitar stack overflow con PDFs grandes
-      const uint8 = new Uint8Array(arrayBuffer)
-      let binary = ''
-      const chunkSize = 8192
-      for (let i = 0; i < uint8.length; i += chunkSize) {
-        binary += String.fromCharCode(...uint8.subarray(i, i + chunkSize))
+      // Cargar pdf.js desde CDN
+      if (!(window as any).pdfjsLib) {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+          script.onload = () => resolve()
+          script.onerror = () => reject(new Error('No se pudo cargar pdf.js'))
+          document.head.appendChild(script)
+        })
       }
-      const base64 = btoa(binary)
-      const res = await fetch(SUPA_URL + '/functions/v1/parsear-planilla', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + SUPA_KEY,
-          'apikey': SUPA_KEY,
-        },
-        body: JSON.stringify({ pdf_base64: base64, filename: file.name })
-      })
-      const data = await res.json()
-      setResultado(data)
+      const pdfjsLib = (window as any).pdfjsLib
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+
+      setProgreso({ actual: 0, total: 0, estado: 'Leyendo archivo...' })
+      const arrayBuffer = await file.arrayBuffer()
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      const totalPags = pdf.numPages
+
+      setProgreso({ actual: 0, total: totalPags, estado: 'Analizando páginas...' })
+
+      const todasFilas: Fila[] = []
+      let paginasProcesadas = 0
+
+      for (let pag = 1; pag <= totalPags; pag++) {
+        if (cancelRef.current) break
+
+        const page = await pdf.getPage(pag)
+        const content = await page.getTextContent()
+
+        // Reconstruir líneas de texto
+        const items = content.items as any[]
+        let lines: string[] = []
+        let currentLine = ''
+        let lastY = -1
+
+        for (const item of items) {
+          const y = Math.round(item.transform[5])
+          if (lastY !== -1 && Math.abs(y - lastY) > 3) {
+            if (currentLine.trim()) lines.push(currentLine.trim())
+            currentLine = item.str
+          } else {
+            currentLine += item.str
+          }
+          lastY = y
+        }
+        if (currentLine.trim()) lines.push(currentLine.trim())
+
+        // Filtrar páginas de planilla de carga
+        if (!isPlanillaHeader(lines)) {
+          setProgreso({ actual: pag, total: totalPags, estado: `Página ${pag}/${totalPags}` })
+          continue
+        }
+
+        const transporte = extraerTransporte(lines)
+        const filas = parsearPagina(lines, transporte)
+        todasFilas.push(...filas)
+        paginasProcesadas++
+
+        setProgreso({ actual: pag, total: totalPags, estado: `Procesando... ${paginasProcesadas} pág. planilla, ${todasFilas.length} filas` })
+      }
+
+      if (!todasFilas.length) {
+        setError('No se extrajeron filas. Verificá que sea una Planilla de Carga digital (no escaneada).')
+        setArchivo(null); return
+      }
+
+      // Resumen agrupado
+      const mapa = new Map<string, Fila>()
+      for (const f of todasFilas) {
+        const key = f.Transporte + '|' + f.CodigoArticulo + '|' + f.Descripcion
+        const ex = mapa.get(key)
+        if (ex) ex.Bultos += f.Bultos
+        else mapa.set(key, { ...f })
+      }
+      const res = Array.from(mapa.values())
+        .sort((a, b) => a.Transporte.localeCompare(b.Transporte) || a.CodigoArticulo.localeCompare(b.CodigoArticulo))
+
+      setDetalle(todasFilas)
+      setResumen(res)
+      setProgreso({ actual: totalPags, total: totalPags, estado: '¡Listo!' })
+
     } catch (err) {
-      setResultado({ ok: false, error: 'Error al conectar con el servidor: ' + String(err) })
-    } finally {
-      setCargando(false)
+      setError('Error: ' + String(err))
+      setArchivo(null)
+      setProgreso({ actual: 0, total: 0, estado: '' })
     }
   }
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file) procesarArchivo(file)
+    const file = e.dataTransfer.files[0]; if (file) procesarPDF(file)
   }, [])
 
   const onFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) procesarArchivo(file)
+    const file = e.target.files?.[0]; if (file) procesarPDF(file)
   }
 
-  const resetear = () => { setArchivo(null); setResultado(null) }
+  const resetear = () => {
+    cancelRef.current = true
+    setArchivo(null); setDetalle([]); setResumen([])
+    setProgreso({ actual: 0, total: 0, estado: '' }); setError('')
+  }
+
+  const listo = detalle.length > 0
+  const pct = progreso.total > 0 ? Math.round(progreso.actual / progreso.total * 100) : 0
+
+  // Transportes únicos para resumen
+  const transportes = [...new Set(resumen.map(f => f.Transporte))].sort()
+  const detalleF = filtro ? detalle.filter(f =>
+    f.Transporte.toLowerCase().includes(filtro.toLowerCase()) ||
+    f.CodigoArticulo.includes(filtro) ||
+    f.Descripcion.toLowerCase().includes(filtro.toLowerCase())
+  ) : detalle
+  const resumenF = filtro ? resumen.filter(f =>
+    f.Transporte.toLowerCase().includes(filtro.toLowerCase()) ||
+    f.CodigoArticulo.includes(filtro) ||
+    f.Descripcion.toLowerCase().includes(filtro.toLowerCase())
+  ) : resumen
 
   return (
     <Layout>
@@ -178,113 +206,169 @@ export default function PlanillaCarga() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Planilla de Carga</h1>
-            <p className="text-dark-400 text-sm mt-1">Subí el PDF de planilla de carga para extraer los datos por transporte</p>
+            <p className="text-dark-400 text-sm mt-1">Subí el PDF para extraer los datos por transporte · Procesado 100% en el browser</p>
           </div>
-          {resultado?.ok && (
+          {(listo || archivo) && (
             <button onClick={resetear} className="flex items-center gap-2 text-dark-400 hover:text-white text-sm transition-colors">
               <RefreshCw className="w-4 h-4" /> Nuevo PDF
             </button>
           )}
         </div>
 
+        {/* Error */}
+        {error && (
+          <div className="card rounded-xl p-4 mb-4 flex gap-3">
+            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-red-400 font-semibold text-sm">Error</p>
+              <p className="text-red-300 text-sm mt-0.5">{error}</p>
+              <button onClick={resetear} className="mt-3 btn-primary px-4 py-1.5 rounded-lg text-sm">Intentar de nuevo</button>
+            </div>
+          </div>
+        )}
+
         {/* Drop zone */}
-        {!archivo && !cargando && (
+        {!archivo && !error && (
           <div
             onDragOver={e => { e.preventDefault(); setDragging(true) }}
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
-            className={'border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer ' +
-              (dragging ? 'border-primary-400 bg-primary-400/10' : 'border-dark-600 hover:border-dark-400 hover:bg-dark-800/30')}
             onClick={() => document.getElementById('pdf-input')?.click()}
+            className={'border-2 border-dashed rounded-2xl p-16 text-center transition-all cursor-pointer ' +
+              (dragging ? 'border-primary-400 bg-primary-400/10' : 'border-dark-600 hover:border-dark-400 hover:bg-dark-800/30')}
           >
-            <Upload className={'w-12 h-12 mx-auto mb-4 ' + (dragging ? 'text-primary-400' : 'text-dark-500')} />
-            <p className="text-white font-semibold text-lg mb-2">
-              {dragging ? 'Soltá el PDF acá' : 'Arrastrá el PDF o hacé click para seleccionar'}
-            </p>
-            <p className="text-dark-400 text-sm">Solo archivos .pdf · Planilla de Carga</p>
+            <Upload className={'w-14 h-14 mx-auto mb-4 ' + (dragging ? 'text-primary-400' : 'text-dark-500')} />
+            <p className="text-white font-semibold text-xl mb-2">{dragging ? 'Soltá el PDF acá' : 'Arrastrá el PDF o hacé click'}</p>
+            <p className="text-dark-400 text-sm">Planilla de Carga · Chess ERP · Cualquier tamaño</p>
             <input id="pdf-input" type="file" accept=".pdf" className="hidden" onChange={onFileInput} />
           </div>
         )}
 
-        {/* Cargando */}
-        {cargando && (
-          <div className="card rounded-2xl p-12 text-center">
-            <RefreshCw className="w-10 h-10 text-primary-400 animate-spin mx-auto mb-4" />
-            <p className="text-white font-semibold text-lg">Procesando {archivo?.name}...</p>
-            <p className="text-dark-400 text-sm mt-2">Extrayendo datos del PDF, esto puede tardar unos segundos</p>
-          </div>
-        )}
-
-        {/* Error */}
-        {resultado && !resultado.ok && (
-          <div className="card rounded-2xl p-6">
-            <div className="flex gap-3 mb-4">
-              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-red-400 font-semibold">Error al procesar el PDF</p>
-                <p className="text-red-300 text-sm mt-1">{resultado.error}</p>
+        {/* Progreso */}
+        {archivo && !listo && !error && (
+          <div className="card rounded-2xl p-8">
+            <div className="flex items-center gap-3 mb-4">
+              <FileText className="w-6 h-6 text-primary-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold truncate">{archivo.name}</p>
+                <p className="text-dark-400 text-sm">{(archivo.size / 1024 / 1024).toFixed(1)} MB</p>
               </div>
             </div>
-            <button onClick={resetear} className="btn-primary px-4 py-2 rounded-lg text-sm">Intentar con otro PDF</button>
+            <div className="w-full bg-dark-700 rounded-full h-3 mb-3">
+              <div className="bg-primary-500 h-3 rounded-full transition-all duration-300" style={{ width: pct + '%' }} />
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-dark-300">{progreso.estado}</span>
+              <span className="text-primary-400 font-semibold">{pct}%</span>
+            </div>
           </div>
         )}
 
-        {/* Resultado OK */}
-        {resultado?.ok && resultado.stats && (
+        {/* Resultados */}
+        {listo && (
           <>
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <div className="card rounded-xl p-4">
-                <p className="text-2xl font-bold text-primary-400">{resultado.stats.transportes}</p>
+                <p className="text-2xl font-bold text-primary-400">{transportes.length}</p>
                 <p className="text-dark-400 text-sm flex items-center gap-1 mt-1"><Truck className="w-3.5 h-3.5" />Transportes</p>
               </div>
               <div className="card rounded-xl p-4">
-                <p className="text-2xl font-bold text-green-400">{resultado.stats.skus}</p>
+                <p className="text-2xl font-bold text-green-400">{new Set(detalle.map(f=>f.CodigoArticulo)).size}</p>
                 <p className="text-dark-400 text-sm flex items-center gap-1 mt-1"><Package className="w-3.5 h-3.5" />SKUs únicos</p>
               </div>
               <div className="card rounded-xl p-4">
-                <p className="text-2xl font-bold text-white">{resultado.stats.filas}</p>
+                <p className="text-2xl font-bold text-white">{detalle.length}</p>
                 <p className="text-dark-400 text-sm mt-1">Filas totales</p>
               </div>
               <div className="card rounded-xl p-4">
-                <p className="text-2xl font-bold text-yellow-400">{resultado.stats.paginas_procesadas}</p>
-                <p className="text-dark-400 text-sm flex items-center gap-1 mt-1"><FileText className="w-3.5 h-3.5" />Páginas leídas</p>
+                <p className="text-2xl font-bold text-yellow-400">{detalle.reduce((s,f)=>s+f.Bultos,0).toLocaleString()}</p>
+                <p className="text-dark-400 text-sm mt-1">Bultos totales</p>
               </div>
             </div>
 
-            {/* Acciones */}
-            <div className="flex items-center justify-between mb-3">
+            {/* Controles */}
+            <div className="flex flex-wrap items-center gap-3 mb-3">
               <div className="flex gap-1 bg-dark-800 rounded-lg p-1">
                 <button onClick={() => setTab('resumen')}
-                  className={'px-4 py-1.5 rounded-md text-sm font-medium transition-colors ' +
-                    (tab === 'resumen' ? 'bg-primary-600 text-white' : 'text-dark-400 hover:text-white')}>
-                  Resumen por transporte
+                  className={'px-3 py-1.5 rounded-md text-sm font-medium transition-colors ' + (tab==='resumen' ? 'bg-primary-600 text-white' : 'text-dark-400 hover:text-white')}>
+                  Resumen ({resumen.length})
                 </button>
                 <button onClick={() => setTab('detalle')}
-                  className={'px-4 py-1.5 rounded-md text-sm font-medium transition-colors ' +
-                    (tab === 'detalle' ? 'bg-primary-600 text-white' : 'text-dark-400 hover:text-white')}>
-                  Detalle ({resultado.detalle?.length} filas)
+                  className={'px-3 py-1.5 rounded-md text-sm font-medium transition-colors ' + (tab==='detalle' ? 'bg-primary-600 text-white' : 'text-dark-400 hover:text-white')}>
+                  Detalle ({detalle.length})
                 </button>
               </div>
-              <div className="flex gap-2">
-                <button onClick={() => exportarCSV(resultado.resumen || [], 'resumen_planilla.csv')}
+              <input type="text" placeholder="Filtrar..." value={filtro}
+                onChange={e => setFiltro(e.target.value)}
+                className="input-field flex-1 max-w-xs text-sm" />
+              <div className="flex gap-2 ml-auto">
+                <button onClick={() => exportarCSV(resumenF, 'resumen_planilla.csv')}
                   className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
                   <Download className="w-3.5 h-3.5" />Resumen CSV
                 </button>
-                <button onClick={() => exportarCSV(resultado.detalle || [], 'detalle_planilla.csv')}
+                <button onClick={() => exportarCSV(detalleF, 'detalle_planilla.csv')}
                   className="flex items-center gap-2 bg-dark-700 hover:bg-dark-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
                   <Download className="w-3.5 h-3.5" />Detalle CSV
                 </button>
               </div>
             </div>
 
-            {/* Tabla */}
-            <div className="card rounded-xl overflow-hidden">
-              {tab === 'resumen'
-                ? <TablaResumen filas={resultado.resumen || []} />
-                : <TablaDetalle filas={resultado.detalle || []} />
-              }
-            </div>
+            {/* Tabla resumen */}
+            {tab === 'resumen' && (
+              <div className="card rounded-xl overflow-hidden">
+                <div className="overflow-x-auto max-h-[500px]">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-dark-800">
+                      <tr className="border-b border-dark-700">
+                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Transporte</th>
+                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Código</th>
+                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Descripción</th>
+                        <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Bultos</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resumenF.map((f, i) => (
+                        <tr key={i} className="border-b border-dark-800 hover:bg-dark-800/40">
+                          <td className="px-4 py-2 text-blue-400 text-xs font-medium">{f.Transporte}</td>
+                          <td className="px-4 py-2 text-primary-400 font-mono font-semibold">{f.CodigoArticulo}</td>
+                          <td className="px-4 py-2 text-white">{f.Descripcion}</td>
+                          <td className="px-4 py-2 text-right text-white font-semibold">{f.Bultos}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Tabla detalle */}
+            {tab === 'detalle' && (
+              <div className="card rounded-xl overflow-hidden">
+                <div className="overflow-x-auto max-h-[500px]">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-dark-800">
+                      <tr className="border-b border-dark-700">
+                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Transporte</th>
+                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Código</th>
+                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Descripción</th>
+                        <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Bultos</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detalleF.map((f, i) => (
+                        <tr key={i} className="border-b border-dark-800 hover:bg-dark-800/40">
+                          <td className="px-4 py-2 text-blue-400 text-xs font-medium">{f.Transporte}</td>
+                          <td className="px-4 py-2 text-primary-400 font-mono font-semibold">{f.CodigoArticulo}</td>
+                          <td className="px-4 py-2 text-white">{f.Descripcion}</td>
+                          <td className="px-4 py-2 text-right text-white font-semibold">{f.Bultos}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
