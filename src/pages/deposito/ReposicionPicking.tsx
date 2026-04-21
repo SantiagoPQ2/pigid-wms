@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import BarcodeScanner from '../../components/BarcodeScanner'
 import Layout from '../../components/Layout'
-import { Camera } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { Camera } from 'lucide-react'
 
 type EstadoRepo = 'pendiente' | 'en_proceso' | 'completada' | 'cancelada'
 
@@ -138,9 +138,14 @@ export default function ReposicionPicking() {
 
   const handleScan = (codigo: string) => {
     setScannerAbierto(false)
+    // Filtrar la lista para mostrar solo el artículo escaneado
     const input = document.getElementById('buscar-reposicion') as HTMLInputElement
-    if (input) { input.value = codigo; input.dispatchEvent(new Event('input',{bubbles:true})) }
+    if (input) {
+      input.value = codigo
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
   }
+
 
   return (
     <Layout>
