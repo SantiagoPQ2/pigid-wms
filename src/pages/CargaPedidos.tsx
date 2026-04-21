@@ -142,53 +142,6 @@ async function procesarPedidoERP(
   onLog: (msg: string) => void
 ): Promise<{ nropedido: string; estado: EstadoPedido; error: string }> {
 
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
-  const edgeFnUrl = `${supabaseUrl}/functions/v1/cargar-pedidos`
-
-  const payload = {
-    pedido: {
-      idcliente:  parseInt(pedido.idcliente),
-      idclialias: parseInt(pedido.idclialias),
-      fecentre:   pedido.fecentre,
-      renglones:  pedido.renglones.map(r => ({
-        codart:   r.codart,
-        cant:     r.cant,
-        bonifpct: r.bonifpct || '0',
-        motivo:   r.motivo   || '0',
-      })),
-      overrides: pedido.overrides,
-    }
-  }
-
-  try {
-    onLog('Conectando con el ERP...')
-
-    const res = await fetch(edgeFnUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseKey}`,
-        'apikey': supabaseKey,
-      },
-      body: JSON.stringify(payload)
-    })
-
-    const data = await res.json()
-    if (data.logs) data.logs.forEach((l: string) => onLog(l))
-
-    if (data.success) {
-      return { nropedido: String(data.nropedido), estado: 'ok', error: '' }
-    } else {
-      return { nropedido: '', estado: 'error', error: data.error || 'Error desconocido' }
-    }
-
-  } catch (err) {
-    onLog(`Error de conexión: ${err}`)
-    return { nropedido: '', estado: 'error', error: String(err) }
-  }
-}> {
-
   // URL de la Supabase Edge Function (corre en los servidores de Supabase
   // que SÍ tienen acceso al ERP interno via internet)
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
@@ -217,7 +170,7 @@ async function procesarPedidoERP(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseKey}`,
+        'Authorization': 'Bearer ' + supabaseKey,
         'apikey': supabaseKey,
       },
       body: JSON.stringify(payload)
@@ -234,7 +187,7 @@ async function procesarPedidoERP(
     }
 
   } catch (err) {
-    onLog(`Error de conexión: ${err}`)
+    onLog('Error de conexion: ' + String(err))
     return { nropedido: '', estado: 'error', error: String(err) }
   }
 }
