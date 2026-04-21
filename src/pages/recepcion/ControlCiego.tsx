@@ -119,6 +119,18 @@ export default function ControlCiego() {
   const itemsFaltante = resultados.filter(r => (r.diferencia ?? 0) < 0).length
   const itemsSobrante = resultados.filter(r => (r.diferencia ?? 0) > 0).length
 
+  const handleScan = (codigo: string) => {
+    setScannerAbierto(false)
+    setCodigoEscaneado(codigo)
+    // Buscar el item con ese código y hacer foco
+    const input = document.querySelector(`input[data-codigo="${codigo}"]`) as HTMLInputElement
+    if (input) {
+      input.focus()
+      input.select()
+    }
+  }
+
+
   return (
     <Layout>
       <div className="p-6">
@@ -314,15 +326,4 @@ export default function ControlCiego() {
     </Layout>
   )
 }
-  const handleScan = (codigo: string) => {
-    setScannerAbierto(false)
-    setCodigoEscaneado(codigo)
-    // Buscar el item con ese código y hacer foco
-    const input = document.querySelector(`input[data-codigo="${codigo}"]`) as HTMLInputElement
-    if (input) {
-      input.focus()
-      input.select()
-    }
-  }
-
 
