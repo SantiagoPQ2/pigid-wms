@@ -47,6 +47,7 @@ const navItems = [
     { label: 'Estadísticas', path: '/reportes/estadisticas' },
     { label: 'Carga Pedidos ERP', path: '/erp/carga-pedidos' },
     { label: 'Patagonia WMS', path: '/reportes/patagonia' },
+    { label: 'Planilla de Carga', path: '/reportes/planilla-carga' },
   ]},
 ]
 
