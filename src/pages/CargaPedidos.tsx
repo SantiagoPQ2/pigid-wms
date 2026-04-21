@@ -142,6 +142,53 @@ async function procesarPedidoERP(
   onLog: (msg: string) => void
 ): Promise<{ nropedido: string; estado: EstadoPedido; error: string }> {
 
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+  const edgeFnUrl = `${supabaseUrl}/functions/v1/cargar-pedidos`
+
+  const payload = {
+    pedido: {
+      idcliente:  parseInt(pedido.idcliente),
+      idclialias: parseInt(pedido.idclialias),
+      fecentre:   pedido.fecentre,
+      renglones:  pedido.renglones.map(r => ({
+        codart:   r.codart,
+        cant:     r.cant,
+        bonifpct: r.bonifpct || '0',
+        motivo:   r.motivo   || '0',
+      })),
+      overrides: pedido.overrides,
+    }
+  }
+
+  try {
+    onLog('Conectando con el ERP...')
+
+    const res = await fetch(edgeFnUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`,
+        'apikey': supabaseKey,
+      },
+      body: JSON.stringify(payload)
+    })
+
+    const data = await res.json()
+    if (data.logs) data.logs.forEach((l: string) => onLog(l))
+
+    if (data.success) {
+      return { nropedido: String(data.nropedido), estado: 'ok', error: '' }
+    } else {
+      return { nropedido: '', estado: 'error', error: data.error || 'Error desconocido' }
+    }
+
+  } catch (err) {
+    onLog(`Error de conexión: ${err}`)
+    return { nropedido: '', estado: 'error', error: String(err) }
+  }
+}> {
+
   // URL de la Supabase Edge Function (corre en los servidores de Supabase
   // que SÍ tienen acceso al ERP interno via internet)
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
@@ -166,37 +213,15 @@ async function procesarPedidoERP(
   try {
     onLog('Conectando con el ERP...')
 
-    // Primero intentar proxy local (si está corriendo)
-    let usandoLocal = false
-    try {
-      const ping = await fetch('http://localhost:5001/ping', {
-        signal: AbortSignal.timeout(1500)
-      })
-      if (ping.ok) {
-        usandoLocal = true
-        onLog('Proxy local detectado en localhost:5001')
-      }
-    } catch { /* usar edge function */ }
-
-    let res: Response
-    if (usandoLocal) {
-      res = await fetch('http://localhost:5001/cargar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
-    } else {
-      onLog('Usando Supabase Edge Function...')
-      res = await fetch(edgeFnUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseKey}`,
-          'apikey': supabaseKey,
-        },
-        body: JSON.stringify(payload)
-      })
-    }
+    const res = await fetch(edgeFnUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`,
+        'apikey': supabaseKey,
+      },
+      body: JSON.stringify(payload)
+    })
 
     const data = await res.json()
 
