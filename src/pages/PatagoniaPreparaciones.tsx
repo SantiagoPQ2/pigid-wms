@@ -47,7 +47,7 @@ interface FilaComparacion {
   BultosPlani: number
   BultosPat: number
   Diferencia: number
-  Estado: 'ok' | 'diferencia'
+  Estado: 'ok' | 'falta_pat' | 'diferencia'
 }
 
 function exportarCSV(detalle: DetalleContenedor[], _pedidos: PedidoRow[], soloDetalle: DetalleContenedor[]) {
@@ -135,7 +135,7 @@ export default function PatagoniaPreparaciones() {
   const [planillasDisponibles, setPlanillasDisponibles] = useState<any[]>([])
   const [planillaSeleccionada, setPlanillaSeleccionada] = useState<any | null>(null)
   const [filasComparacion, setFilasComparacion] = useState<FilaComparacion[]>([])
-  const [filtroComp, setFiltroComp] = useState<'todos' | 'diferencia' | 'ok'>('diferencia')
+  const [filtroComp, setFiltroComp] = useState<'todos' | 'falta_pat' | 'diferencia' | 'ok'>('diferencia')
 
   const SUPA_URL = import.meta.env.VITE_SUPABASE_URL
   const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -268,8 +268,9 @@ export default function PatagoniaPreparaciones() {
       const diff   = bPlani - bPat
 
       let estado: FilaComparacion['Estado']
-      if (diff !== 0)  estado = 'diferencia'  // cualquier diferencia, incluido bPlani=0
-      else             estado = 'ok'
+      if (bPlani === 0)      estado = 'falta_pat'   // Pat completó, no estaba en planilla
+      else if (diff !== 0)  estado = 'diferencia'  // incluye bPat=0: planilla=9, pat=0 → dif=9
+      else                  estado = 'ok'
 
       resultado.push({
         ID: id,
@@ -284,7 +285,7 @@ export default function PatagoniaPreparaciones() {
     }
 
     resultado.sort((a, b) => {
-      const orden: Record<string, number> = { diferencia: 0, ok: 1 }
+      const orden: Record<string, number> = { diferencia: 0, falta_pat: 1, ok: 2 }
       return (orden[a.Estado] ?? 3) - (orden[b.Estado] ?? 3) || a.Transporte.localeCompare(b.Transporte)
     })
 
@@ -543,18 +544,21 @@ export default function PatagoniaPreparaciones() {
                     <span className="text-dark-400 text-sm">Planilla: <strong className="text-white">{planillaSeleccionada.fecha_str}</strong></span>
                     <span className="text-dark-400 text-xs">Patagonia filtrada: <strong className="text-white">Completada · {planillaSeleccionada.fecha_str}</strong></span>
 
-                    <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-xs font-medium">
-                      {filasComparacion.filter(f => f.Estado==='diferencia').length} con diferencia (incl. Patagonia=0)
+                    <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs font-medium">
+                      {filasComparacion.filter(f => f.Estado==='diferencia').length} con diferencia
+                    </span>
+                    <span className="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded text-xs font-medium">
+                      {filasComparacion.filter(f => f.Estado==='falta_pat').length} falta en planilla
                     </span>
                     <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs font-medium">
                       {filasComparacion.filter(f => f.Estado==='ok').length} coinciden
                     </span>
                     <div className="ml-auto flex gap-2">
                       <div className="flex gap-1 bg-dark-800 rounded-lg p-1">
-                        {(['todos','diferencia','ok'] as const).map(f => (
+                        {(['todos','diferencia','falta_pat','ok'] as const).map(f => (
                           <button key={f} onClick={() => setFiltroComp(f)}
                             className={'px-2 py-1 rounded text-xs font-medium transition-colors '+(filtroComp===f?'bg-purple-600 text-white':'text-dark-400 hover:text-white')}>
-                            {f==='todos'?'Todos':f==='diferencia'?'Diferencia':'Coinciden'}
+                            {f==='todos'?'Todos':f==='diferencia'?'Diferencia':f==='falta_pat'?'Falta Pat.':'Coinciden'}
                           </button>
                         ))}
                       </div>
@@ -582,7 +586,7 @@ export default function PatagoniaPreparaciones() {
                         {filasComparacion
                           .filter(f => filtroComp==='todos' || f.Estado===filtroComp)
                           .map((f, i) => {
-                            const rowCls = f.Estado==='diferencia' ? 'bg-red-500/5 border-red-500/10' : 'border-dark-800'
+                            const rowCls = f.Estado==='diferencia' ? 'bg-red-500/5 border-red-500/10' : f.Estado==='falta_pat' ? 'bg-orange-500/5 border-orange-500/10' : 'border-dark-800'
                             return (
                               <tr key={i} className={'border-b '+rowCls}>
                                 <td className="px-4 py-2 text-dark-300 font-mono text-xs">{f.ID}</td>
@@ -596,7 +600,8 @@ export default function PatagoniaPreparaciones() {
                                 </td>
                                 <td className="px-4 py-2 text-center">
                                   {f.Estado==='ok' && <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs">OK</span>}
-                                  {f.Estado==='diferencia' && <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-xs">Diferencia</span>}
+                                  {f.Estado==='diferencia' && <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">Diferencia</span>}
+                                  {f.Estado==='falta_pat' && <span className="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded text-xs">Falta Pat.</span>}
                                 </td>
                               </tr>
                             )
