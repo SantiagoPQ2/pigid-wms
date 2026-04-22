@@ -30,8 +30,12 @@ function parsearPagina(lines: string[], transporte: string): Fila[] {
     if (!inTable) continue
     if (/T\s*O\s*T\s*A\s*L/.test(line) || line.includes('Estado del Transporte')) { inTable = false; continue }
 
-    // Línea artículo: SKU DESC [VENC] BULTOS [UNIDS] [PESO]
-    const m = line.match(/^(\d{2,})\s+(.+?)\s+(\d{1,5})(?:\s+[\d,.]+)*\s*$/)
+    // Regex fix: greedy (.+) para capturar toda la descripción
+    // Con peso decimal: "62185 SALTEÑA RAVIOL 16  9  4.05" → bultos=9 (no 16)
+    // Sin peso: "9601 DANICA KETCHUP 24X220 12" → bultos=12
+    const mPeso    = line.match(/^(\d{2,})\s+(.+)\s+(\d{1,5})\s+\d+[.,]\d+\s*$/)
+    const mSinPeso = line.match(/^(\d{2,})\s+(.+)\s+(\d{1,5})\s*$/)
+    const m = mPeso || mSinPeso
     if (!m) continue
 
     const sku = m[1]
