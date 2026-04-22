@@ -150,7 +150,7 @@ export default function PatagoniaPreparaciones() {
   const [planillasDisponibles, setPlanillasDisponibles] = useState<any[]>([])
   const [planillaSeleccionada, setPlanillaSeleccionada] = useState<any | null>(null)
   const [filasComparacion, setFilasComparacion] = useState<FilaComparacion[]>([])
-  const [filtroComp, setFiltroComp] = useState<'todos'|'falta_pat'|'falta_plani'|'diferencia'>('todos')
+  const [filtroComp, setFiltroComp] = useState<'todos'|'falta_pat'|'diferencia'|'ok'>('falta_pat')
 
   const SUPA_URL = import.meta.env.VITE_SUPABASE_URL
   const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -259,53 +259,60 @@ export default function PatagoniaPreparaciones() {
   const compararConPlanilla = async (planilla: any) => {
     setPlanillaSeleccionada(planilla)
     setComparando(true)
-    // Cargar detalle de planilla
+
+    // Cargar resumen de la planilla seleccionada
     const { data } = await supabase.from('planillas_carga').select('resumen').eq('id', planilla.id).single()
     if (!data) { setComparando(false); return }
     const planillaItems: any[] = data.resumen
 
-    // Construir mapa de Patagonia por ID
-    const mapaPat = new Map<string, { Unidades: number; Articulo: string; IdReparto: string }>()
-    for (const row of detalle) {
+    // Filtrar Patagonia: SOLO preparaciones Completada con la misma fecha que la planilla
+    const fechaPlanilla = planilla.fecha // formato yyyy-mm-dd
+    const patFiltrado = detalle.filter(row =>
+      (row.PreparacionEstado === 'Completada' || row.PreparacionEstado === 'Completo') &&
+      row.Fecha === fechaPlanilla
+    )
+
+    // Construir mapa de Patagonia filtrado: ID → Unidades
+    const mapaPat = new Map<string, number>()
+    for (const row of patFiltrado) {
       const key = (row.IdReparto ?? '') + String(row.CodigoArticulo ?? '')
-      const ex = mapaPat.get(key)
-      if (ex) ex.Unidades += row.Unidades || 0
-      else mapaPat.set(key, { Unidades: row.Unidades || 0, Articulo: row.Articulo || '', IdReparto: row.IdReparto || '' })
+      mapaPat.set(key, (mapaPat.get(key) ?? 0) + (row.Unidades || 0))
     }
 
-    // Construir mapa de planilla por ID
-    const mapaPlani = new Map<string, any>()
-    for (const item of planillaItems) mapaPlani.set(item.ID, item)
-
-    // IDs únicos de ambos lados
-    const todosIds = new Set([...mapaPlani.keys(), ...mapaPat.keys()])
+    // Comparar: solo tomamos los IDs de la PLANILLA como referencia
+    // Si el ID de planilla no está en Patagonia → Patagonia = 0
+    // Si está pero con diferente cantidad → mostrar diferencia
+    // Si coincide exactamente → OK (pero no lo mostramos según la lógica pedida)
     const resultado: FilaComparacion[] = []
 
-    for (const id of todosIds) {
-      const plani = mapaPlani.get(id)
-      const pat = mapaPat.get(id)
-      const bPlani = plani?.Bultos ?? 0
-      const bPat = pat?.Unidades ?? 0
-      const diff = bPlani - bPat
-      let estado: FilaComparacion['Estado'] = 'ok'
-      if (!pat) estado = 'falta_pat'
-      else if (!plani) estado = 'falta_plani'
-      else if (diff !== 0) estado = 'diferencia'
+    for (const item of planillaItems) {
+      const bPlani = item.Bultos ?? 0
+      const bPat   = mapaPat.get(item.ID) ?? 0
+      const diff   = bPlani - bPat
+
+      let estado: FilaComparacion['Estado']
+      if (bPat === 0)       estado = 'falta_pat'    // está en planilla, Patagonia = 0
+      else if (diff !== 0)  estado = 'diferencia'   // cantidades distintas
+      else                  estado = 'ok'            // coincide exactamente
+
       resultado.push({
-        ID: id,
-        Transporte: plani?.Transporte || pat?.IdReparto || '',
-        CodigoArticulo: plani?.CodigoArticulo || String(id).replace(/^\d+/, ''),
-        Descripcion: plani?.Descripcion || pat?.Articulo || '',
-        BultosPlani: bPlani,
-        BultosPat: bPat,
-        Diferencia: diff,
-        Estado: estado,
+        ID:             item.ID,
+        Transporte:     item.Transporte,
+        CodigoArticulo: item.CodigoArticulo,
+        Descripcion:    item.Descripcion,
+        BultosPlani:    bPlani,
+        BultosPat:      bPat,
+        Diferencia:     diff,
+        Estado:         estado,
       })
     }
-    resultado.sort((a,b) => {
-      const orden = { falta_pat: 0, diferencia: 1, falta_plani: 2, ok: 3 }
+
+    // Ordenar: primero falta_pat, luego diferencia, luego ok
+    resultado.sort((a, b) => {
+      const orden = { falta_pat: 0, diferencia: 1, ok: 2, ok: 2 }
       return orden[a.Estado] - orden[b.Estado] || a.Transporte.localeCompare(b.Transporte)
     })
+
     setFilasComparacion(resultado)
     setComparando(false)
   }
@@ -619,18 +626,18 @@ export default function PatagoniaPreparaciones() {
                     <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-xs font-medium">
                       {filasComparacion.filter(f=>f.Estado==='diferencia').length} con diferencia
                     </span>
-                    <span className="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-xs font-medium">
-                      {filasComparacion.filter(f=>f.Estado==='falta_plani').length} falta en planilla
+                    <span className="text-dark-400 text-xs">
+                      Fecha Patagonia filtrada: <strong className="text-white">{planillaSeleccionada.fecha_str} · Completada</strong>
                     </span>
                     <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs font-medium">
                       {filasComparacion.filter(f=>f.Estado==='ok').length} coinciden
                     </span>
                     <div className="ml-auto flex gap-2">
                       <div className="flex gap-1 bg-dark-800 rounded-lg p-1">
-                        {(['todos','falta_pat','diferencia','falta_plani'] as const).map(f => (
+                        {(['todos','falta_pat','diferencia','ok'] as const).map(f => (
                           <button key={f} onClick={() => setFiltroComp(f)}
                             className={'px-2 py-1 rounded text-xs font-medium transition-colors '+(filtroComp===f?'bg-purple-600 text-white':'text-dark-400 hover:text-white')}>
-                            {f==='todos'?'Todos':f==='falta_pat'?'Falta Pat.':f==='diferencia'?'Diferencia':'Falta Plani.'}
+                            {f==='todos'?'Todos':f==='falta_pat'?'Falta Pat.':f==='diferencia'?'Diferencia':'Coinciden'}
                           </button>
                         ))}
                       </div>
@@ -678,7 +685,7 @@ export default function PatagoniaPreparaciones() {
                               <td className="px-4 py-2 text-center">
                                 {f.Estado==='ok' && <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs">OK</span>}
                                 {f.Estado==='falta_pat' && <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">Falta Pat.</span>}
-                                {f.Estado==='falta_plani' && <span className="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-xs">Falta Plani.</span>}
+  
                                 {f.Estado==='diferencia' && <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-xs">Diferencia</span>}
                               </td>
                             </tr>
