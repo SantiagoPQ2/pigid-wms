@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { supabase } from '../lib/supabase'
 import Layout from '../components/Layout'
 import { Download, RefreshCw, Package, Truck, AlertCircle, ChevronDown, ChevronUp, GitCompare, X } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 
 interface DetalleContenedor {
   ID: string
@@ -50,29 +50,26 @@ interface FilaComparacion {
   Estado: 'ok' | 'falta_pat' | 'diferencia'
 }
 
+function exportarCSV(detalle: DetalleContenedor[], _pedidos: PedidoRow[], soloDetalle: DetalleContenedor[]) {
+  const headers = 'ID;PreparacionId;PreparacionEstado;NumeroContenedor;CodigoArticulo;Articulo;Unidades;Lote;FechaVencimiento;PesoDeclarado;Fecha;IdReparto'
+  const rows = soloDetalle.map(r =>
+    [r.ID,r.PreparacionId,r.PreparacionEstado,r.NumeroContenedor,r.CodigoArticulo,
+     r.Articulo,r.Unidades,r.Lote??'',r.FechaVencimiento??'',r.PesoDeclarado??'',r.Fecha??'',r.IdReparto??''].join(';')
+  )
+  const blob = new Blob(['\uFEFF'+headers+'\n'+rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a'); a.href = url
+  a.download = 'preparaciones_'+new Date().toISOString().split('T')[0]+'.csv'; a.click()
+  URL.revokeObjectURL(url)
+}
+
 function exportarComparacionCSV(filas: FilaComparacion[], fecha: string) {
   const headers = 'ID;Transporte;CodigoArticulo;Descripcion;BultosPlani;BultosPat;Diferencia;Estado'
   const rows = filas.map(f => [f.ID,f.Transporte,f.CodigoArticulo,f.Descripcion,f.BultosPlani,f.BultosPat,f.Diferencia,f.Estado].join(';'))
   const blob = new Blob(['\uFEFF'+headers+'\n'+rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
-  const a = document.createElement('a'); a.href = url; a.download = 'comparacion_'+fecha.replace(/\//g,'-')+'.csv'; a.click()
-  URL.revokeObjectURL(url)
-}
-
-function exportarCSV(detalle: DetalleContenedor[], pedidos: PedidoRow[], soloDetalle: DetalleContenedor[]) {
-  const headers = 'ID;PreparacionId;PreparacionEstado;NumeroContenedor;CodigoArticulo;Articulo;Unidades;Lote;FechaVencimiento;PesoDeclarado;Fecha;IdReparto'
-  const rows = soloDetalle.map(r =>
-    [r.ID, r.PreparacionId, r.PreparacionEstado, r.NumeroContenedor, r.CodigoArticulo,
-     r.Articulo, r.Unidades, r.Lote ?? '', r.FechaVencimiento ?? '',
-     r.PesoDeclarado ?? '', r.Fecha ?? '', r.IdReparto ?? ''].join(';')
-  )
-  const csv = [headers, ...rows].join('\n')
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'preparaciones_' + new Date().toISOString().split('T')[0] + '.csv'
-  a.click()
+  const a = document.createElement('a'); a.href = url
+  a.download = 'comparacion_'+fecha.replace(/\//g,'-')+'.csv'; a.click()
   URL.revokeObjectURL(url)
 }
 
@@ -88,40 +85,28 @@ function BadgeEstado({ estado }: { estado: string }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${cls}`}>{estado || '—'}</span>
 }
 
-// ── Filtro estético (igual que PlanillaCarga) ──────────────────────────────────
 function FiltroTexto({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
     <div className="relative flex-1 max-w-sm">
       <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
       </svg>
-      <input
-        type="text"
-        placeholder={placeholder}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className="w-full bg-dark-800 border border-dark-600 hover:border-dark-500 focus:border-primary-500 focus:ring-1 focus:ring-primary-500/30 rounded-lg pl-9 pr-8 py-2 text-sm text-white placeholder-dark-500 outline-none transition-all"
-      />
+      <input type="text" placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)}
+        className="w-full bg-dark-800 border border-dark-600 hover:border-dark-500 focus:border-primary-500 focus:ring-1 focus:ring-primary-500/30 rounded-lg pl-9 pr-8 py-2 text-sm text-white placeholder-dark-500 outline-none transition-all" />
       {value && (
         <button onClick={() => onChange('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-400 hover:text-white transition-colors">
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
       )}
     </div>
   )
 }
 
-// ── Select estético ────────────────────────────────────────────────────────────
 function FiltroSelect({ value, onChange, options, placeholder }: { value: string; onChange: (v: string) => void; options: string[]; placeholder: string }) {
   return (
     <div className="relative">
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className="appearance-none bg-dark-800 border border-dark-600 hover:border-dark-500 focus:border-primary-500 focus:ring-1 focus:ring-primary-500/30 rounded-lg pl-3 pr-8 py-2 text-sm text-white outline-none transition-all cursor-pointer"
-      >
+      <select value={value} onChange={e => onChange(e.target.value)}
+        className="appearance-none bg-dark-800 border border-dark-600 hover:border-dark-500 focus:border-primary-500 rounded-lg pl-3 pr-8 py-2 text-sm text-white outline-none transition-all cursor-pointer">
         <option value="">{placeholder}</option>
         {options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
@@ -144,13 +129,13 @@ export default function PatagoniaPreparaciones() {
   const [filtroFecha, setFiltroFecha] = useState('')
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set())
 
-  // Comparación con planilla de carga
+  // Comparación
   const [mostrarComparacion, setMostrarComparacion] = useState(false)
   const [comparando, setComparando] = useState(false)
   const [planillasDisponibles, setPlanillasDisponibles] = useState<any[]>([])
   const [planillaSeleccionada, setPlanillaSeleccionada] = useState<any | null>(null)
-  const [filtroComp, setFiltroComp] = useState<'todos'|'falta_pat'|'diferencia'|'ok'>('falta_pat')
-  const [filtroComp, setFiltroComp] = useState<'todos'|'falta_pat'|'diferencia'|'ok'>('todos')
+  const [filasComparacion, setFilasComparacion] = useState<FilaComparacion[]>([])
+  const [filtroComp, setFiltroComp] = useState<'todos' | 'falta_pat' | 'diferencia' | 'ok'>('falta_pat')
 
   const SUPA_URL = import.meta.env.VITE_SUPABASE_URL
   const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -161,18 +146,12 @@ export default function PatagoniaPreparaciones() {
     try {
       const res = await fetch(SUPA_URL + '/functions/v1/patagonia-preparaciones', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + SUPA_KEY,
-          'apikey': SUPA_KEY,
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY, 'apikey': SUPA_KEY },
         body: JSON.stringify({}),
       })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error ?? 'Error desconocido')
       setStats(data.stats)
-
-      // Agregar columna ID = IdReparto + CodigoArticulo (sin separador)
       const detalleConId: DetalleContenedor[] = (data.detalle ?? []).map((r: any) => ({
         ...r,
         ID: (r.IdReparto ?? '') + String(r.CodigoArticulo ?? ''),
@@ -186,11 +165,9 @@ export default function PatagoniaPreparaciones() {
     }
   }
 
-  // Opciones de filtros (valores únicos)
   const opcionesEstado = [...new Set(detalle.map(r => r.PreparacionEstado).filter(Boolean))].sort()
   const opcionesFecha  = [...new Set(detalle.map(r => r.Fecha).filter(Boolean))].sort().reverse() as string[]
 
-  // Agrupar detalle por PreparacionId
   const detalleAgrupado = detalle.reduce<Record<string, DetalleContenedor[]>>((acc, row) => {
     const id = String(row.PreparacionId ?? 'Sin ID')
     if (!acc[id]) acc[id] = []
@@ -200,40 +177,30 @@ export default function PatagoniaPreparaciones() {
 
   const prepIds = Object.keys(detalleAgrupado)
 
-  // Aplicar filtros
   const prepFiltradas = prepIds.filter(id => {
     const rows = detalleAgrupado[id]
     const primera = rows[0]
-    // Filtro estado
     if (filtroEstado && primera.PreparacionEstado !== filtroEstado) return false
-    // Filtro fecha
     if (filtroFecha && primera.Fecha !== filtroFecha) return false
-    // Filtro texto
     if (filtroTexto) {
       const txt = filtroTexto.toLowerCase()
       return rows.some(r =>
-        String(r.CodigoArticulo).includes(txt) ||
-        r.Articulo?.toLowerCase().includes(txt) ||
-        id.toLowerCase().includes(txt) ||
-        r.IdReparto?.toLowerCase().includes(txt) ||
-        r.NumeroContenedor?.toLowerCase().includes(txt) ||
-        r.ID?.toLowerCase().includes(txt)
+        String(r.CodigoArticulo).includes(txt) || r.Articulo?.toLowerCase().includes(txt) ||
+        id.toLowerCase().includes(txt) || r.IdReparto?.toLowerCase().includes(txt) ||
+        r.NumeroContenedor?.toLowerCase().includes(txt) || r.ID?.toLowerCase().includes(txt)
       )
     }
     return true
   })
 
-  // Detalle filtrado para exportar
   const detalleFiltrado = prepFiltradas.flatMap(id => detalleAgrupado[id])
 
   const pedidosFiltrados = pedidos.filter(p => {
     if (!filtroTexto) return true
     const txt = filtroTexto.toLowerCase()
-    return (
-      String(p.CodigoPedido).toLowerCase().includes(txt) ||
+    return String(p.CodigoPedido).toLowerCase().includes(txt) ||
       String(p.CodigoClienteUbicacion).toLowerCase().includes(txt) ||
       p.IdReparto?.toLowerCase().includes(txt)
-    )
   })
 
   const toggleExpand = (id: string) => {
@@ -248,64 +215,51 @@ export default function PatagoniaPreparaciones() {
 
   const abrirComparacion = async () => {
     setMostrarComparacion(true)
-    const { data } = await supabase
-      .from('planillas_carga')
-      .select('id, fecha, fecha_str, archivo_nombre')
-      .order('fecha', { ascending: false })
-      .limit(30)
+    setPlanillaSeleccionada(null)
+    setFilasComparacion([])
+    const { data } = await supabase.from('planillas_carga').select('id, fecha, fecha_str, archivo_nombre').order('fecha', { ascending: false }).limit(30)
     if (data) setPlanillasDisponibles(data)
   }
 
   const compararConPlanilla = async (planilla: any) => {
     setPlanillaSeleccionada(planilla)
     setComparando(true)
-    // Cargar detalle de planilla
+
     const { data } = await supabase.from('planillas_carga').select('resumen').eq('id', planilla.id).single()
     if (!data) { setComparando(false); return }
     const planillaItems: any[] = data.resumen
 
-    // Construir mapa de Patagonia por ID
-    const mapaPat = new Map<string, { Unidades: number; Articulo: string; IdReparto: string }>()
-    for (const row of detalle) {
+    // Filtrar Patagonia: SOLO Completada con la misma fecha que la planilla
+    const fechaPlanilla = planilla.fecha // yyyy-mm-dd
+    const patFiltrado = detalle.filter(row =>
+      (row.PreparacionEstado === 'Completada' || row.PreparacionEstado === 'Completo') &&
+      row.Fecha === fechaPlanilla
+    )
+
+    // Mapa Patagonia: ID → Unidades
+    const mapaPat = new Map<string, number>()
+    for (const row of patFiltrado) {
       const key = (row.IdReparto ?? '') + String(row.CodigoArticulo ?? '')
-      const ex = mapaPat.get(key)
-      if (ex) ex.Unidades += row.Unidades || 0
-      else mapaPat.set(key, { Unidades: row.Unidades || 0, Articulo: row.Articulo || '', IdReparto: row.IdReparto || '' })
+      mapaPat.set(key, (mapaPat.get(key) ?? 0) + (row.Unidades || 0))
     }
 
-    // Construir mapa de planilla por ID
-    const mapaPlani = new Map<string, any>()
-    for (const item of planillaItems) mapaPlani.set(item.ID, item)
-
-    // IDs únicos de ambos lados
-    const todosIds = new Set([...mapaPlani.keys(), ...mapaPat.keys()])
-    const resultado: FilaComparacion[] = []
-
-    for (const id of todosIds) {
-      const plani = mapaPlani.get(id)
-      const pat = mapaPat.get(id)
-      const bPlani = plani?.Bultos ?? 0
-      const bPat = pat?.Unidades ?? 0
-      const diff = bPlani - bPat
-      const diff = bPlani - bPat
+    // Comparar tomando planilla como referencia
+    const resultado: FilaComparacion[] = planillaItems.map(item => {
+      const bPlani = item.Bultos ?? 0
+      const bPat   = mapaPat.get(item.ID) ?? 0
+      const diff   = bPlani - bPat
       let estado: FilaComparacion['Estado']
-      if (bPat === 0) estado = 'falta_pat'
+      if (bPat === 0)      estado = 'falta_pat'
       else if (diff !== 0) estado = 'diferencia'
-      else estado = 'ok'
-        ID: id,
-        Transporte: plani?.Transporte || pat?.IdReparto || '',
-        CodigoArticulo: plani?.CodigoArticulo || String(id).replace(/^\d+/, ''),
-        Descripcion: plani?.Descripcion || pat?.Articulo || '',
-        BultosPlani: bPlani,
-        BultosPat: bPat,
-        Diferencia: diff,
-        Estado: estado,
-      })
-    }
-    resultado.sort((a,b) => {
-      const orden: Record<string,number> = { falta_pat: 0, diferencia: 1, ok: 2 }
-      return orden[a.Estado] - orden[b.Estado] || a.Transporte.localeCompare(b.Transporte)
+      else                 estado = 'ok'
+      return { ID: item.ID, Transporte: item.Transporte, CodigoArticulo: item.CodigoArticulo, Descripcion: item.Descripcion, BultosPlani: bPlani, BultosPat: bPat, Diferencia: diff, Estado: estado }
     })
+
+    resultado.sort((a, b) => {
+      const orden: Record<string, number> = { falta_pat: 0, diferencia: 1, ok: 2 }
+      return (orden[a.Estado] ?? 3) - (orden[b.Estado] ?? 3) || a.Transporte.localeCompare(b.Transporte)
+    })
+
     setFilasComparacion(resultado)
     setComparando(false)
   }
@@ -313,34 +267,25 @@ export default function PatagoniaPreparaciones() {
   return (
     <Layout>
       <div className="p-6">
-
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-white">Patagonia WMS — Preparaciones</h1>
           <div className="flex gap-2">
             {detalle.length > 0 && (
-              <button
-                onClick={abrirComparacion}
-                className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                <GitCompare className="w-4 h-4" />
-                Comparación
+              <button onClick={abrirComparacion}
+                className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                <GitCompare className="w-4 h-4" />Comparación
               </button>
             )}
             {detalle.length > 0 && (
-              <button
-                onClick={() => exportarCSV(detalle, pedidos, detalleFiltrado)}
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
+              <button onClick={() => exportarCSV(detalle, pedidos, detalleFiltrado)}
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                 <Download className="w-4 h-4" />
                 Exportar CSV{hayFiltros ? ' (filtrado)' : ''}
               </button>
             )}
-            <button
-              onClick={fetchData}
-              disabled={cargando}
-              className="flex items-center gap-2 btn-primary px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50"
-            >
+            <button onClick={fetchData} disabled={cargando}
+              className="flex items-center gap-2 btn-primary px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
               <RefreshCw className={`w-4 h-4 ${cargando ? 'animate-spin' : ''}`} />
               {cargando ? 'Consultando API...' : 'Traer datos'}
             </button>
@@ -363,29 +308,16 @@ export default function PatagoniaPreparaciones() {
           <div className="card rounded-xl p-8 text-center">
             <RefreshCw className="w-8 h-8 text-primary-400 animate-spin mx-auto mb-3" />
             <p className="text-white font-medium">Consultando Patagonia WMS...</p>
-            <p className="text-dark-400 text-sm mt-1">Trayendo preparaciones en paralelo, puede tardar unos segundos</p>
           </div>
         )}
 
         {/* Stats */}
         {stats && !cargando && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <div className="card rounded-xl p-4">
-              <p className="text-2xl font-bold text-white">{stats.pedidos_totales}</p>
-              <p className="text-dark-400 text-sm">Pedidos totales</p>
-            </div>
-            <div className="card rounded-xl p-4">
-              <p className="text-2xl font-bold text-primary-400">{stats.preparaciones_unicas}</p>
-              <p className="text-dark-400 text-sm">Preparaciones</p>
-            </div>
-            <div className="card rounded-xl p-4">
-              <p className="text-2xl font-bold text-green-400">{stats.filas_detalle}</p>
-              <p className="text-dark-400 text-sm">Filas de detalle</p>
-            </div>
-            <div className="card rounded-xl p-4">
-              <p className="text-2xl font-bold text-yellow-400">{prepFiltradas.length}</p>
-              <p className="text-dark-400 text-sm">Mostrando</p>
-            </div>
+            <div className="card rounded-xl p-4"><p className="text-2xl font-bold text-white">{stats.pedidos_totales}</p><p className="text-dark-400 text-sm">Pedidos totales</p></div>
+            <div className="card rounded-xl p-4"><p className="text-2xl font-bold text-primary-400">{stats.preparaciones_unicas}</p><p className="text-dark-400 text-sm">Preparaciones</p></div>
+            <div className="card rounded-xl p-4"><p className="text-2xl font-bold text-green-400">{stats.filas_detalle}</p><p className="text-dark-400 text-sm">Filas de detalle</p></div>
+            <div className="card rounded-xl p-4"><p className="text-2xl font-bold text-yellow-400">{prepFiltradas.length}</p><p className="text-dark-400 text-sm">Mostrando</p></div>
           </div>
         )}
 
@@ -395,45 +327,23 @@ export default function PatagoniaPreparaciones() {
             {/* Tabs + filtros */}
             <div className="flex flex-wrap items-center gap-3 mb-3">
               <div className="flex gap-1 bg-dark-800 rounded-lg p-1">
-                <button onClick={() => setTab('detalle')}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab==='detalle' ? 'bg-primary-600 text-white' : 'text-dark-400 hover:text-white'}`}>
+                <button onClick={() => setTab('detalle')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab==='detalle'?'bg-primary-600 text-white':'text-dark-400 hover:text-white'}`}>
                   <Package className="w-3.5 h-3.5 inline mr-1.5" />Detalle ({detalle.length})
                 </button>
-                <button onClick={() => setTab('pedidos')}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab==='pedidos' ? 'bg-primary-600 text-white' : 'text-dark-400 hover:text-white'}`}>
+                <button onClick={() => setTab('pedidos')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab==='pedidos'?'bg-primary-600 text-white':'text-dark-400 hover:text-white'}`}>
                   <Truck className="w-3.5 h-3.5 inline mr-1.5" />Pedidos ({pedidos.length})
                 </button>
               </div>
-
-              {/* Filtros */}
               {tab === 'detalle' && (
                 <>
-                  <FiltroSelect
-                    value={filtroEstado}
-                    onChange={setFiltroEstado}
-                    options={opcionesEstado}
-                    placeholder="Estado"
-                  />
-                  <FiltroSelect
-                    value={filtroFecha}
-                    onChange={setFiltroFecha}
-                    options={opcionesFecha}
-                    placeholder="Fecha"
-                  />
+                  <FiltroSelect value={filtroEstado} onChange={setFiltroEstado} options={opcionesEstado} placeholder="Estado" />
+                  <FiltroSelect value={filtroFecha} onChange={setFiltroFecha} options={opcionesFecha} placeholder="Fecha" />
                 </>
               )}
-
-              <FiltroTexto
-                value={filtroTexto}
-                onChange={setFiltroTexto}
-                placeholder="Buscar artículo, preparación, reparto..."
-              />
-
+              <FiltroTexto value={filtroTexto} onChange={setFiltroTexto} placeholder="Buscar artículo, preparación, reparto..." />
               {hayFiltros && (
-                <button
-                  onClick={() => { setFiltroTexto(''); setFiltroEstado(''); setFiltroFecha('') }}
-                  className="text-xs text-dark-400 hover:text-white transition-colors whitespace-nowrap"
-                >
+                <button onClick={() => { setFiltroTexto(''); setFiltroEstado(''); setFiltroFecha('') }}
+                  className="text-xs text-dark-400 hover:text-white transition-colors whitespace-nowrap">
                   Limpiar filtros
                 </button>
               )}
@@ -454,19 +364,16 @@ export default function PatagoniaPreparaciones() {
                   const rows = detalleAgrupado[prepId]
                   const primera = rows[0]
                   const expanded = expandidos.has(prepId)
-                  const totalUnidades = rows.reduce((s, r) => s + (r.Unidades || 0), 0)
+                  const totalUnidades = rows.reduce((s,r) => s + (r.Unidades||0), 0)
                   return (
                     <div key={prepId} className="card rounded-xl overflow-hidden">
-                      <button
-                        onClick={() => toggleExpand(prepId)}
-                        className="w-full flex items-center justify-between px-4 py-3 hover:bg-dark-700/50 transition-colors"
-                      >
+                      <button onClick={() => toggleExpand(prepId)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-dark-700/50 transition-colors">
                         <div className="flex items-center gap-3 flex-wrap">
                           <span className="text-white font-semibold font-mono text-sm">#{prepId}</span>
                           <BadgeEstado estado={primera.PreparacionEstado} />
                           {primera.IdReparto && <span className="text-xs text-blue-400 font-mono">Reparto: {primera.IdReparto}</span>}
                           {primera.Fecha && <span className="text-xs text-dark-400">{primera.Fecha}</span>}
-                          <span className="text-xs text-dark-500">{rows.length} artículo{rows.length !== 1 ? 's' : ''} · {totalUnidades} unidades</span>
+                          <span className="text-xs text-dark-500">{rows.length} artículo{rows.length!==1?'s':''} · {totalUnidades} unidades</span>
                         </div>
                         {expanded ? <ChevronUp className="w-4 h-4 text-dark-500" /> : <ChevronDown className="w-4 h-4 text-dark-500" />}
                       </button>
@@ -486,16 +393,16 @@ export default function PatagoniaPreparaciones() {
                               </tr>
                             </thead>
                             <tbody>
-                              {rows.map((r, i) => (
+                              {rows.map((r,i) => (
                                 <tr key={i} className="border-b border-dark-800 hover:bg-dark-800/40">
-                                  <td className="px-4 py-2 text-dark-300 font-mono text-xs">{r.ID || '—'}</td>
-                                  <td className="px-4 py-2 text-dark-300 font-mono text-xs">{r.NumeroContenedor || '—'}</td>
+                                  <td className="px-4 py-2 text-dark-300 font-mono text-xs">{r.ID||'—'}</td>
+                                  <td className="px-4 py-2 text-dark-300 font-mono text-xs">{r.NumeroContenedor||'—'}</td>
                                   <td className="px-4 py-2 text-primary-400 font-mono font-semibold">{r.CodigoArticulo}</td>
-                                  <td className="px-4 py-2 text-white">{r.Articulo || '—'}</td>
+                                  <td className="px-4 py-2 text-white">{r.Articulo||'—'}</td>
                                   <td className="px-4 py-2 text-right text-white font-semibold">{r.Unidades}</td>
-                                  <td className="px-4 py-2 text-dark-300 font-mono text-xs">{r.Lote || '—'}</td>
-                                  <td className="px-4 py-2 text-dark-300 text-xs">{r.FechaVencimiento || '—'}</td>
-                                  <td className="px-4 py-2 text-right text-dark-300 text-xs">{r.PesoDeclarado != null ? r.PesoDeclarado : '—'}</td>
+                                  <td className="px-4 py-2 text-dark-300 font-mono text-xs">{r.Lote||'—'}</td>
+                                  <td className="px-4 py-2 text-dark-300 text-xs">{r.FechaVencimiento||'—'}</td>
+                                  <td className="px-4 py-2 text-right text-dark-300 text-xs">{r.PesoDeclarado!=null?r.PesoDeclarado:'—'}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -526,19 +433,17 @@ export default function PatagoniaPreparaciones() {
                       </tr>
                     </thead>
                     <tbody>
-                      {pedidosFiltrados.length === 0 && (
-                        <tr><td colSpan={8} className="px-4 py-8 text-center text-dark-500">Sin resultados</td></tr>
-                      )}
-                      {pedidosFiltrados.map((p, i) => (
+                      {pedidosFiltrados.length===0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-dark-500">Sin resultados</td></tr>}
+                      {pedidosFiltrados.map((p,i) => (
                         <tr key={i} className="border-b border-dark-800 hover:bg-dark-800/40">
                           <td className="px-4 py-2.5 text-primary-400 font-mono font-semibold">{p.CodigoPedido}</td>
-                          <td className="px-4 py-2.5 text-dark-300 text-xs">{p.CodigoClienteUbicacion || '—'}</td>
+                          <td className="px-4 py-2.5 text-dark-300 text-xs">{p.CodigoClienteUbicacion||'—'}</td>
                           <td className="px-4 py-2.5"><BadgeEstado estado={p.PedidoEstado} /></td>
-                          <td className="px-4 py-2.5 text-dark-300 text-xs">{p.Fecha || '—'}</td>
-                          <td className="px-4 py-2.5 text-dark-300 text-xs">{p.FechaEstimadaEntrega || '—'}</td>
-                          <td className="px-4 py-2.5 text-right text-white font-mono text-xs">{p.Importe != null ? '$' + Number(p.Importe).toLocaleString() : '—'}</td>
-                          <td className="px-4 py-2.5 text-dark-300 text-xs font-mono">{p.CodigoDespacho || '—'}</td>
-                          <td className="px-4 py-2.5 text-blue-400 text-xs font-mono">{p.IdReparto || '—'}</td>
+                          <td className="px-4 py-2.5 text-dark-300 text-xs">{p.Fecha||'—'}</td>
+                          <td className="px-4 py-2.5 text-dark-300 text-xs">{p.FechaEstimadaEntrega||'—'}</td>
+                          <td className="px-4 py-2.5 text-right text-white font-mono text-xs">{p.Importe!=null?'$'+Number(p.Importe).toLocaleString():'—'}</td>
+                          <td className="px-4 py-2.5 text-dark-300 text-xs font-mono">{p.CodigoDespacho||'—'}</td>
+                          <td className="px-4 py-2.5 text-blue-400 text-xs font-mono">{p.IdReparto||'—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -550,7 +455,7 @@ export default function PatagoniaPreparaciones() {
         )}
 
         {/* Estado vacío */}
-        {!cargando && !error && detalle.length === 0 && pedidos.length === 0 && (
+        {!cargando && !error && detalle.length===0 && pedidos.length===0 && (
           <div className="card rounded-xl p-12 text-center">
             <Package className="w-12 h-12 text-dark-600 mx-auto mb-4" />
             <p className="text-white font-semibold text-lg mb-2">Sin datos</p>
@@ -558,79 +463,72 @@ export default function PatagoniaPreparaciones() {
             <button onClick={fetchData} className="btn-primary px-6 py-2.5 rounded-lg font-semibold">Traer datos ahora</button>
           </div>
         )}
-      </div>
 
-      {/* Modal comparación */}
-      {mostrarComparacion && (
-        <div className="fixed inset-0 z-[200] bg-black/70 flex items-start justify-center pt-10 px-4">
-          <div className="bg-dark-900 border border-dark-700 rounded-2xl w-full max-w-5xl max-h-[85vh] flex flex-col">
-            {/* Header modal */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700">
-              <div className="flex items-center gap-3">
-                <GitCompare className="w-5 h-5 text-purple-400" />
-                <h2 className="text-white font-bold text-lg">Comparación Planilla vs Patagonia</h2>
-              </div>
-              <button onClick={() => { setMostrarComparacion(false); setFilasComparacion([]); setPlanillaSeleccionada(null) }}
-                className="text-dark-400 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
-            </div>
-
-            {/* Selección de planilla */}
-            {!planillaSeleccionada && (
-              <div className="p-6 overflow-y-auto">
-                <p className="text-dark-400 text-sm mb-4">Seleccioná una planilla guardada para comparar con los datos de Patagonia actuales:</p>
-                {planillasDisponibles.length === 0 && (
-                  <div className="text-center text-dark-500 py-8">No hay planillas guardadas. Guardá una desde la sección Planilla de Carga.</div>
-                )}
-                <div className="space-y-2">
-                  {planillasDisponibles.map(p => (
-                    <button key={p.id} onClick={() => compararConPlanilla(p)}
-                      className="w-full flex items-center justify-between px-4 py-3 bg-dark-800 hover:bg-dark-700 rounded-xl transition-colors text-left">
-                      <div>
-                        <p className="text-white font-semibold">{p.fecha_str}</p>
-                        <p className="text-dark-400 text-xs">{p.archivo_nombre || 'Sin nombre'}</p>
-                      </div>
-                      <span className="text-primary-400 text-sm">Comparar →</span>
-                    </button>
-                  ))}
+        {/* Modal comparación */}
+        {mostrarComparacion && (
+          <div className="fixed inset-0 z-[200] bg-black/70 flex items-start justify-center pt-10 px-4">
+            <div className="bg-dark-900 border border-dark-700 rounded-2xl w-full max-w-5xl max-h-[85vh] flex flex-col">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700">
+                <div className="flex items-center gap-3">
+                  <GitCompare className="w-5 h-5 text-purple-400" />
+                  <h2 className="text-white font-bold text-lg">Comparación Planilla vs Patagonia</h2>
                 </div>
+                <button onClick={() => { setMostrarComparacion(false); setFilasComparacion([]); setPlanillaSeleccionada(null) }}
+                  className="text-dark-400 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
               </div>
-            )}
 
-            {/* Comparando */}
-            {planillaSeleccionada && comparando && (
-              <div className="flex-1 flex items-center justify-center">
-                <div className="text-center">
-                  <RefreshCw className="w-8 h-8 text-purple-400 animate-spin mx-auto mb-3" />
-                  <p className="text-white font-medium">Comparando planilla {planillaSeleccionada.fecha_str} con Patagonia...</p>
+              {/* Selección de planilla */}
+              {!planillaSeleccionada && (
+                <div className="p-6 overflow-y-auto">
+                  <p className="text-dark-400 text-sm mb-4">Seleccioná una planilla guardada para comparar con Patagonia (solo Completada de esa fecha):</p>
+                  {planillasDisponibles.length===0 && <div className="text-center text-dark-500 py-8">No hay planillas guardadas.</div>}
+                  <div className="space-y-2">
+                    {planillasDisponibles.map(p => (
+                      <button key={p.id} onClick={() => compararConPlanilla(p)}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-dark-800 hover:bg-dark-700 rounded-xl transition-colors text-left">
+                        <div>
+                          <p className="text-white font-semibold">{p.fecha_str}</p>
+                          <p className="text-dark-400 text-xs">{p.archivo_nombre||'Sin nombre'}</p>
+                        </div>
+                        <span className="text-primary-400 text-sm">Comparar →</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Resultado */}
-            {planillaSeleccionada && !comparando && filasComparacion.length > 0 && (
-              <>
-                {/* Stats comparación */}
-                <div className="px-6 py-3 border-b border-dark-700">
-                  <div className="flex items-center gap-4 flex-wrap">
+              {/* Comparando */}
+              {planillaSeleccionada && comparando && (
+                <div className="flex-1 flex items-center justify-center p-8">
+                  <div className="text-center">
+                    <RefreshCw className="w-8 h-8 text-purple-400 animate-spin mx-auto mb-3" />
+                    <p className="text-white font-medium">Comparando planilla {planillaSeleccionada.fecha_str} con Patagonia...</p>
+                    <p className="text-dark-400 text-sm mt-1">Filtrando solo preparaciones Completada de esa fecha</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Resultados */}
+              {planillaSeleccionada && !comparando && filasComparacion.length > 0 && (
+                <>
+                  <div className="px-6 py-3 border-b border-dark-700 flex items-center gap-4 flex-wrap">
                     <span className="text-dark-400 text-sm">Planilla: <strong className="text-white">{planillaSeleccionada.fecha_str}</strong></span>
+                    <span className="text-dark-400 text-xs">Patagonia filtrada: <strong className="text-white">Completada · {planillaSeleccionada.fecha_str}</strong></span>
                     <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs font-medium">
-                      {filasComparacion.filter(f=>f.Estado==='falta_pat').length} falta en Patagonia
+                      {filasComparacion.filter(f => f.Estado==='falta_pat').length} falta en Patagonia
                     </span>
                     <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-xs font-medium">
-                      {filasComparacion.filter(f=>f.Estado==='diferencia').length} con diferencia
-                    </span>
-                    <span className="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-xs font-medium">
-                    <span className="text-dark-400 text-xs">Patagonia filtrada: <strong className="text-white">{planillaSeleccionada?.fecha_str} · Completada</strong></span>
+                      {filasComparacion.filter(f => f.Estado==='diferencia').length} con diferencia
                     </span>
                     <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs font-medium">
-                      {filasComparacion.filter(f=>f.Estado==='ok').length} coinciden
+                      {filasComparacion.filter(f => f.Estado==='ok').length} coinciden
                     </span>
                     <div className="ml-auto flex gap-2">
                       <div className="flex gap-1 bg-dark-800 rounded-lg p-1">
                         {(['todos','falta_pat','diferencia','ok'] as const).map(f => (
                           <button key={f} onClick={() => setFiltroComp(f)}
                             className={'px-2 py-1 rounded text-xs font-medium transition-colors '+(filtroComp===f?'bg-purple-600 text-white':'text-dark-400 hover:text-white')}>
-                            {f==='todos'?'Todos':f==='falta_pat'?'Falta Pat.':f==='diferencia'?'Diferencia':'Falta Plani.'}
+                            {f==='todos'?'Todos':f==='falta_pat'?'Falta Pat.':f==='diferencia'?'Diferencia':'Coinciden'}
                           </button>
                         ))}
                       </div>
@@ -640,44 +538,55 @@ export default function PatagoniaPreparaciones() {
                       </button>
                     </div>
                   </div>
-                </div>
-                {/* Tabla comparación */}
-                <div className="overflow-auto flex-1">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-dark-900">
-                      <tr className="border-b border-dark-700">
-                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">ID</th>
-                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Transporte</th>
-                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Código</th>
-                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Descripción</th>
-                        <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Planilla</th>
-                        <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Patagonia</th>
-                        <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Dif.</th>
-                        <th className="text-center px-4 py-2 text-dark-400 text-xs uppercase">Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filasComparacion
-                        .filter(f => filtroComp==='todos' || f.Estado===filtroComp)
-                        .map((f,i) => {
-                          const rowCls = f.Estado==='falta_pat' ? 'bg-red-500/5 border-red-500/10'
-                            : f.Estado==='diferencia' ? 'bg-yellow-500/5 border-yellow-500/10'
-
-                                {f.Diferencia>0?'+':''}{f.Diferencia}
-                              </td>
-                              <td className="px-4 py-2 text-center">
-                                {f.Estado==='ok' && <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs">OK</span>}
-                                {f.Estado==='falta_pat' && <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">Falta Pat.</span>}
-                                {false
-                        })}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
+                  <div className="overflow-auto flex-1">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-dark-900">
+                        <tr className="border-b border-dark-700">
+                          <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">ID</th>
+                          <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Transporte</th>
+                          <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Código</th>
+                          <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Descripción</th>
+                          <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Planilla</th>
+                          <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Patagonia</th>
+                          <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Dif.</th>
+                          <th className="text-center px-4 py-2 text-dark-400 text-xs uppercase">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filasComparacion
+                          .filter(f => filtroComp==='todos' || f.Estado===filtroComp)
+                          .map((f, i) => {
+                            const rowCls = f.Estado==='falta_pat' ? 'bg-red-500/5 border-red-500/10'
+                              : f.Estado==='diferencia' ? 'bg-yellow-500/5 border-yellow-500/10'
+                              : 'border-dark-800'
+                            return (
+                              <tr key={i} className={'border-b '+rowCls}>
+                                <td className="px-4 py-2 text-dark-300 font-mono text-xs">{f.ID}</td>
+                                <td className="px-4 py-2 text-blue-400 text-xs">{f.Transporte}</td>
+                                <td className="px-4 py-2 text-primary-400 font-mono font-semibold">{f.CodigoArticulo}</td>
+                                <td className="px-4 py-2 text-white text-xs max-w-xs truncate">{f.Descripcion}</td>
+                                <td className="px-4 py-2 text-right font-semibold text-white">{f.BultosPlani}</td>
+                                <td className="px-4 py-2 text-right font-semibold text-white">{f.BultosPat || <span className="text-dark-500">0</span>}</td>
+                                <td className={'px-4 py-2 text-right font-bold '+(f.Diferencia>0?'text-red-400':f.Diferencia<0?'text-blue-400':'text-green-400')}>
+                                  {f.Diferencia>0?'+':''}{f.Diferencia}
+                                </td>
+                                <td className="px-4 py-2 text-center">
+                                  {f.Estado==='ok' && <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs">OK</span>}
+                                  {f.Estado==='falta_pat' && <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">Falta Pat.</span>}
+                                  {f.Estado==='diferencia' && <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-xs">Diferencia</span>}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </Layout>
   )
 }
