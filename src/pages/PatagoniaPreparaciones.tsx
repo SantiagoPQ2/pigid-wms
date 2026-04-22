@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { supabase } from '../lib/supabase'
 import Layout from '../components/Layout'
-import { Download, RefreshCw, Package, Truck, AlertCircle, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { Download, RefreshCw, Package, Truck, AlertCircle, ChevronDown, ChevronUp, GitCompare, X } from 'lucide-react'
 
 interface DetalleContenedor {
   ID: string
@@ -36,6 +37,26 @@ interface Stats {
   codigos_unicos: number
   preparaciones_unicas: number
   filas_detalle: number
+}
+
+interface FilaComparacion {
+  ID: string
+  Transporte: string
+  CodigoArticulo: string
+  Descripcion: string
+  BultosPlani: number
+  BultosPat: number
+  Diferencia: number
+  Estado: 'ok' | 'falta_pat' | 'falta_plani' | 'diferencia'
+}
+
+function exportarComparacionCSV(filas: FilaComparacion[], fecha: string) {
+  const headers = 'ID;Transporte;CodigoArticulo;Descripcion;BultosPlani;BultosPat;Diferencia;Estado'
+  const rows = filas.map(f => [f.ID,f.Transporte,f.CodigoArticulo,f.Descripcion,f.BultosPlani,f.BultosPat,f.Diferencia,f.Estado].join(';'))
+  const blob = new Blob(['\uFEFF'+headers+'\n'+rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a'); a.href = url; a.download = 'comparacion_'+fecha.replace(/\//g,'-')+'.csv'; a.click()
+  URL.revokeObjectURL(url)
 }
 
 function exportarCSV(detalle: DetalleContenedor[], pedidos: PedidoRow[], soloDetalle: DetalleContenedor[]) {
@@ -122,6 +143,14 @@ export default function PatagoniaPreparaciones() {
   const [filtroEstado, setFiltroEstado] = useState('')
   const [filtroFecha, setFiltroFecha] = useState('')
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set())
+
+  // Comparación con planilla de carga
+  const [mostrarComparacion, setMostrarComparacion] = useState(false)
+  const [comparando, setComparando] = useState(false)
+  const [planillasDisponibles, setPlanillasDisponibles] = useState<any[]>([])
+  const [planillaSeleccionada, setPlanillaSeleccionada] = useState<any | null>(null)
+  const [filasComparacion, setFilasComparacion] = useState<FilaComparacion[]>([])
+  const [filtroComp, setFiltroComp] = useState<'todos'|'falta_pat'|'falta_plani'|'diferencia'>('todos')
 
   const SUPA_URL = import.meta.env.VITE_SUPABASE_URL
   const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -217,6 +246,70 @@ export default function PatagoniaPreparaciones() {
 
   const hayFiltros = filtroEstado || filtroFecha || filtroTexto
 
+  const abrirComparacion = async () => {
+    setMostrarComparacion(true)
+    const { data } = await supabase
+      .from('planillas_carga')
+      .select('id, fecha, fecha_str, archivo_nombre')
+      .order('fecha', { ascending: false })
+      .limit(30)
+    if (data) setPlanillasDisponibles(data)
+  }
+
+  const compararConPlanilla = async (planilla: any) => {
+    setPlanillaSeleccionada(planilla)
+    setComparando(true)
+    // Cargar detalle de planilla
+    const { data } = await supabase.from('planillas_carga').select('resumen').eq('id', planilla.id).single()
+    if (!data) { setComparando(false); return }
+    const planillaItems: any[] = data.resumen
+
+    // Construir mapa de Patagonia por ID
+    const mapaPat = new Map<string, { Unidades: number; Articulo: string; IdReparto: string }>()
+    for (const row of detalle) {
+      const key = (row.IdReparto ?? '') + String(row.CodigoArticulo ?? '')
+      const ex = mapaPat.get(key)
+      if (ex) ex.Unidades += row.Unidades || 0
+      else mapaPat.set(key, { Unidades: row.Unidades || 0, Articulo: row.Articulo || '', IdReparto: row.IdReparto || '' })
+    }
+
+    // Construir mapa de planilla por ID
+    const mapaPlani = new Map<string, any>()
+    for (const item of planillaItems) mapaPlani.set(item.ID, item)
+
+    // IDs únicos de ambos lados
+    const todosIds = new Set([...mapaPlani.keys(), ...mapaPat.keys()])
+    const resultado: FilaComparacion[] = []
+
+    for (const id of todosIds) {
+      const plani = mapaPlani.get(id)
+      const pat = mapaPat.get(id)
+      const bPlani = plani?.Bultos ?? 0
+      const bPat = pat?.Unidades ?? 0
+      const diff = bPlani - bPat
+      let estado: FilaComparacion['Estado'] = 'ok'
+      if (!pat) estado = 'falta_pat'
+      else if (!plani) estado = 'falta_plani'
+      else if (diff !== 0) estado = 'diferencia'
+      resultado.push({
+        ID: id,
+        Transporte: plani?.Transporte || pat?.IdReparto || '',
+        CodigoArticulo: plani?.CodigoArticulo || String(id).replace(/^\d+/, ''),
+        Descripcion: plani?.Descripcion || pat?.Articulo || '',
+        BultosPlani: bPlani,
+        BultosPat: bPat,
+        Diferencia: diff,
+        Estado: estado,
+      })
+    }
+    resultado.sort((a,b) => {
+      const orden = { falta_pat: 0, diferencia: 1, falta_plani: 2, ok: 3 }
+      return orden[a.Estado] - orden[b.Estado] || a.Transporte.localeCompare(b.Transporte)
+    })
+    setFilasComparacion(resultado)
+    setComparando(false)
+  }
+
   return (
     <Layout>
       <div className="p-6">
@@ -225,6 +318,15 @@ export default function PatagoniaPreparaciones() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-white">Patagonia WMS — Preparaciones</h1>
           <div className="flex gap-2">
+            {detalle.length > 0 && (
+              <button
+                onClick={abrirComparacion}
+                className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                <GitCompare className="w-4 h-4" />
+                Comparación
+              </button>
+            )}
             {detalle.length > 0 && (
               <button
                 onClick={() => exportarCSV(detalle, pedidos, detalleFiltrado)}
@@ -457,6 +559,139 @@ export default function PatagoniaPreparaciones() {
           </div>
         )}
       </div>
+
+      {/* Modal comparación */}
+      {mostrarComparacion && (
+        <div className="fixed inset-0 z-[200] bg-black/70 flex items-start justify-center pt-10 px-4">
+          <div className="bg-dark-900 border border-dark-700 rounded-2xl w-full max-w-5xl max-h-[85vh] flex flex-col">
+            {/* Header modal */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700">
+              <div className="flex items-center gap-3">
+                <GitCompare className="w-5 h-5 text-purple-400" />
+                <h2 className="text-white font-bold text-lg">Comparación Planilla vs Patagonia</h2>
+              </div>
+              <button onClick={() => { setMostrarComparacion(false); setFilasComparacion([]); setPlanillaSeleccionada(null) }}
+                className="text-dark-400 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+            </div>
+
+            {/* Selección de planilla */}
+            {!planillaSeleccionada && (
+              <div className="p-6 overflow-y-auto">
+                <p className="text-dark-400 text-sm mb-4">Seleccioná una planilla guardada para comparar con los datos de Patagonia actuales:</p>
+                {planillasDisponibles.length === 0 && (
+                  <div className="text-center text-dark-500 py-8">No hay planillas guardadas. Guardá una desde la sección Planilla de Carga.</div>
+                )}
+                <div className="space-y-2">
+                  {planillasDisponibles.map(p => (
+                    <button key={p.id} onClick={() => compararConPlanilla(p)}
+                      className="w-full flex items-center justify-between px-4 py-3 bg-dark-800 hover:bg-dark-700 rounded-xl transition-colors text-left">
+                      <div>
+                        <p className="text-white font-semibold">{p.fecha_str}</p>
+                        <p className="text-dark-400 text-xs">{p.archivo_nombre || 'Sin nombre'}</p>
+                      </div>
+                      <span className="text-primary-400 text-sm">Comparar →</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Comparando */}
+            {planillaSeleccionada && comparando && (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <RefreshCw className="w-8 h-8 text-purple-400 animate-spin mx-auto mb-3" />
+                  <p className="text-white font-medium">Comparando planilla {planillaSeleccionada.fecha_str} con Patagonia...</p>
+                </div>
+              </div>
+            )}
+
+            {/* Resultado */}
+            {planillaSeleccionada && !comparando && filasComparacion.length > 0 && (
+              <>
+                {/* Stats comparación */}
+                <div className="px-6 py-3 border-b border-dark-700">
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <span className="text-dark-400 text-sm">Planilla: <strong className="text-white">{planillaSeleccionada.fecha_str}</strong></span>
+                    <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs font-medium">
+                      {filasComparacion.filter(f=>f.Estado==='falta_pat').length} falta en Patagonia
+                    </span>
+                    <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-xs font-medium">
+                      {filasComparacion.filter(f=>f.Estado==='diferencia').length} con diferencia
+                    </span>
+                    <span className="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-xs font-medium">
+                      {filasComparacion.filter(f=>f.Estado==='falta_plani').length} falta en planilla
+                    </span>
+                    <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs font-medium">
+                      {filasComparacion.filter(f=>f.Estado==='ok').length} coinciden
+                    </span>
+                    <div className="ml-auto flex gap-2">
+                      <div className="flex gap-1 bg-dark-800 rounded-lg p-1">
+                        {(['todos','falta_pat','diferencia','falta_plani'] as const).map(f => (
+                          <button key={f} onClick={() => setFiltroComp(f)}
+                            className={'px-2 py-1 rounded text-xs font-medium transition-colors '+(filtroComp===f?'bg-purple-600 text-white':'text-dark-400 hover:text-white')}>
+                            {f==='todos'?'Todos':f==='falta_pat'?'Falta Pat.':f==='diferencia'?'Diferencia':'Falta Plani.'}
+                          </button>
+                        ))}
+                      </div>
+                      <button onClick={() => exportarComparacionCSV(filasComparacion, planillaSeleccionada.fecha_str)}
+                        className="flex items-center gap-1.5 bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+                        <Download className="w-3.5 h-3.5" />CSV
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {/* Tabla comparación */}
+                <div className="overflow-auto flex-1">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-dark-900">
+                      <tr className="border-b border-dark-700">
+                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">ID</th>
+                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Transporte</th>
+                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Código</th>
+                        <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Descripción</th>
+                        <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Planilla</th>
+                        <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Patagonia</th>
+                        <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Dif.</th>
+                        <th className="text-center px-4 py-2 text-dark-400 text-xs uppercase">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filasComparacion
+                        .filter(f => filtroComp==='todos' || f.Estado===filtroComp)
+                        .map((f,i) => {
+                          const rowCls = f.Estado==='falta_pat' ? 'bg-red-500/5 border-red-500/10'
+                            : f.Estado==='diferencia' ? 'bg-yellow-500/5 border-yellow-500/10'
+                            : f.Estado==='falta_plani' ? 'bg-blue-500/5 border-blue-500/10'
+                            : 'border-dark-800'
+                          return (
+                            <tr key={i} className={'border-b '+rowCls}>
+                              <td className="px-4 py-2 text-dark-300 font-mono text-xs">{f.ID}</td>
+                              <td className="px-4 py-2 text-blue-400 text-xs">{f.Transporte}</td>
+                              <td className="px-4 py-2 text-primary-400 font-mono font-semibold">{f.CodigoArticulo}</td>
+                              <td className="px-4 py-2 text-white text-xs max-w-[200px] truncate">{f.Descripcion}</td>
+                              <td className="px-4 py-2 text-right font-semibold">{f.BultosPlani || <span className="text-dark-500">—</span>}</td>
+                              <td className="px-4 py-2 text-right font-semibold">{f.BultosPat || <span className="text-dark-500">0</span>}</td>
+                              <td className={'px-4 py-2 text-right font-bold '+(f.Diferencia>0?'text-red-400':f.Diferencia<0?'text-blue-400':'text-green-400')}>
+                                {f.Diferencia>0?'+':''}{f.Diferencia}
+                              </td>
+                              <td className="px-4 py-2 text-center">
+                                {f.Estado==='ok' && <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs">OK</span>}
+                                {f.Estado==='falta_pat' && <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">Falta Pat.</span>}
+                                {f.Estado==='falta_plani' && <span className="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-xs">Falta Plani.</span>}
+                                {f.Estado==='diferencia' && <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-xs">Diferencia</span>}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </Layout>
   )
 }
