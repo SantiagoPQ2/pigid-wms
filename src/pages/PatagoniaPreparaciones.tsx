@@ -287,11 +287,11 @@ export default function PatagoniaPreparaciones() {
       const bPlani = plani?.Bultos ?? 0
       const bPat = pat?.Unidades ?? 0
       const diff = bPlani - bPat
-      let estado: FilaComparacion['Estado'] = 'ok'
-      else if (!plani) estado = 'ok'  // no aplica en este flujo
-      else if (!plani) estado = 'ok'
+      const diff = bPlani - bPat
+      let estado: FilaComparacion['Estado']
+      if (bPat === 0) estado = 'falta_pat'
       else if (diff !== 0) estado = 'diferencia'
-      resultado.push({
+      else estado = 'ok'
         ID: id,
         Transporte: plani?.Transporte || pat?.IdReparto || '',
         CodigoArticulo: plani?.CodigoArticulo || String(id).replace(/^\d+/, ''),
@@ -620,7 +620,7 @@ export default function PatagoniaPreparaciones() {
                       {filasComparacion.filter(f=>f.Estado==='diferencia').length} con diferencia
                     </span>
                     <span className="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-xs font-medium">
-                      {filasComparacion.filter(f=>false.length} falta en planilla
+                    <span className="text-dark-400 text-xs">Patagonia filtrada: <strong className="text-white">{planillaSeleccionada?.fecha_str} · Completada</strong></span>
                     </span>
                     <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs font-medium">
                       {filasComparacion.filter(f=>f.Estado==='ok').length} coinciden
@@ -662,7 +662,7 @@ export default function PatagoniaPreparaciones() {
                         .map((f,i) => {
                           const rowCls = f.Estado==='falta_pat' ? 'bg-red-500/5 border-red-500/10'
                             : f.Estado==='diferencia' ? 'bg-yellow-500/5 border-yellow-500/10'
-                            : false}>
+
                                 {f.Diferencia>0?'+':''}{f.Diferencia}
                               </td>
                               <td className="px-4 py-2 text-center">
