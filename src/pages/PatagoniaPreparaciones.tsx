@@ -229,59 +229,51 @@ export default function PatagoniaPreparaciones() {
     if (!data) { setComparando(false); return }
     const planillaItems: any[] = data.resumen
 
-    // Filtrar Patagonia: SOLO Completada con la misma fecha que la planilla
-    const fechaPlanilla = planilla.fecha // yyyy-mm-dd
+    // Filtrar Patagonia: SOLO Completada con la misma fecha
+    const fechaPlanilla = planilla.fecha
     const patFiltrado = detalle.filter(row =>
       (row.PreparacionEstado === 'Completada' || row.PreparacionEstado === 'Completo') &&
       row.Fecha === fechaPlanilla
     )
 
-    // Si no hay nada Completado de esa fecha, no hay nada que comparar
-    if (patFiltrado.length === 0) {
-      setFilasComparacion([])
-      setComparando(false)
-      return
-    }
-
-    // Mapa Patagonia (Completada, esa fecha): ID → Unidades
-    const mapaPat = new Map<string, { unidades: number; articulo: string; reparto: string }>()
+    // Mapa Patagonia Completada: ID → Unidades
+    const mapaPat = new Map<string, number>()
     for (const row of patFiltrado) {
       const key = (row.IdReparto ?? '') + String(row.CodigoArticulo ?? '')
-      const ex = mapaPat.get(key)
-      if (ex) ex.unidades += row.Unidades || 0
-      else mapaPat.set(key, { unidades: row.Unidades || 0, articulo: row.Articulo || '', reparto: row.IdReparto || '' })
+      mapaPat.set(key, (mapaPat.get(key) ?? 0) + (row.Unidades || 0))
     }
 
-    // Mapa planilla: ID → item
+    // Mapa planilla: ID → item (para falta_pat)
     const mapaPlani = new Map<string, any>()
     for (const item of planillaItems) mapaPlani.set(item.ID, item)
 
-    // EL UNIVERSO SON LOS IDs DE PATAGONIA COMPLETADA
-    // Solo comparamos los que Patagonia ya completó
-    // Si el transporte no está en Patagonia Completada → no aparece (ni 50, ni 56 en proceso)
     const resultado: FilaComparacion[] = []
 
-    for (const [id, pat] of mapaPat) {
-      const plani = mapaPlani.get(id)
-      const bPat   = pat.unidades
-      const bPlani = plani?.Bultos ?? 0
+    // 1. Iterar sobre PLANILLA — incluye casos donde Patagonia=0 o no existe
+    for (const item of planillaItems) {
+      const bPlani = item.Bultos ?? 0
+      const bPat   = mapaPat.get(item.ID) ?? 0  // 0 si no existe en Patagonia
       const diff   = bPlani - bPat
-
       let estado: FilaComparacion['Estado']
-      if (bPlani === 0 && bPat > 0) estado = 'falta_pat'   // Pat completó, no estaba en planilla
-      else if (diff !== 0)          estado = 'diferencia'  // cualquier dif, incl. bPat=0
-      else                          estado = 'ok'
-
+      if (diff !== 0)  estado = 'diferencia'  // incluye bPat=0: plani=1,pat=0 → dif=+1
+      else             estado = 'ok'
       resultado.push({
-        ID: id,
-        Transporte: plani?.Transporte || pat.reparto,
-        CodigoArticulo: plani?.CodigoArticulo || id.replace(/^\d+/, ''),
-        Descripcion: plani?.Descripcion || pat.articulo,
-        BultosPlani: bPlani,
-        BultosPat: bPat,
-        Diferencia: diff,
-        Estado: estado,
+        ID: item.ID, Transporte: item.Transporte,
+        CodigoArticulo: item.CodigoArticulo, Descripcion: item.Descripcion,
+        BultosPlani: bPlani, BultosPat: bPat, Diferencia: diff, Estado: estado,
       })
+    }
+
+    // 2. Iterar sobre Patagonia Completada — agregar los que NO están en planilla (falta_pat)
+    for (const [id, unidades] of mapaPat) {
+      if (!mapaPlani.has(id)) {
+        const row = patFiltrado.find(r => (r.IdReparto ?? '') + String(r.CodigoArticulo ?? '') === id)
+        resultado.push({
+          ID: id, Transporte: row?.IdReparto || '',
+          CodigoArticulo: String(row?.CodigoArticulo || ''), Descripcion: row?.Articulo || '',
+          BultosPlani: 0, BultosPat: unidades, Diferencia: -unidades, Estado: 'falta_pat',
+        })
+      }
     }
 
     resultado.sort((a, b) => {
