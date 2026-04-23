@@ -64,8 +64,11 @@ function exportarCSV(detalle: DetalleContenedor[], _pedidos: PedidoRow[], soloDe
 }
 
 function exportarComparacionCSV(filas: FilaComparacion[], fecha: string) {
-  const headers = 'ID;Transporte;CodigoArticulo;Descripcion;BultosPlani;BultosPat;Diferencia;Estado'
-  const rows = filas.map(f => [f.ID,f.Transporte,f.CodigoArticulo,f.Descripcion,f.BultosPlani,f.BultosPat,f.Diferencia,f.Estado].join(';'))
+  const headers = 'ID;Transporte;CodigoArticulo;Descripcion;BultosPlani;BultosPat;Diferencia;Estado;Accion'
+  const rows = filas.map(f => {
+    const accion = f.Diferencia > 0 ? 'Agregar' : f.Diferencia < 0 ? 'Quitar' : ''
+    return [f.ID,f.Transporte,f.CodigoArticulo,f.Descripcion,f.BultosPlani,f.BultosPat,f.Diferencia,f.Estado,accion].join(';')
+  })
   const blob = new Blob(['\uFEFF'+headers+'\n'+rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a'); a.href = url
