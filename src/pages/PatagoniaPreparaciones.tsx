@@ -243,32 +243,29 @@ export default function PatagoniaPreparaciones() {
       mapaPat.set(key, (mapaPat.get(key) ?? 0) + (row.Unidades || 0))
     }
 
-    // Set de repartos que SÍ tienen al menos una prep Completada esa fecha
-    // Solo los ítems de planilla cuyo reparto esté en este set entran a la comparación
+    // Set de repartos con prep Completada — extraído desde IdReparto de Patagonia
     const repartosCompletados = new Set(patFiltrado.map(row => String(row.IdReparto ?? '')))
 
-    // Mapa planilla: ID → item (para falta_pat)
+    // Mapa planilla: ID → item — filtrado por repartos que SÍ tienen Completada
+    // El nroReparto viene del campo Transporte: "26 - FIORINO 261" → "26"
     const mapaPlani = new Map<string, any>()
     for (const item of planillaItems) {
-      // Solo considerar ítems cuyo reparto tiene preparaciones Completadas
-      const nroReparto = String(item.ID).match(/^(\d+)/)?.[1] ?? ''
+      const nroReparto = String(item.Transporte ?? '').match(/^(\d+)/)?.[1] ?? ''
       if (repartosCompletados.has(nroReparto)) mapaPlani.set(item.ID, item)
     }
 
     const resultado: FilaComparacion[] = []
 
-    // 1. Iterar sobre planilla FILTRADA (solo repartos con prep Completada)
+    // 1. Iterar sobre planilla filtrada (solo repartos con prep Completada)
     for (const [id, item] of mapaPlani) {
       const bPlani = item.Bultos ?? 0
       const bPat   = mapaPat.get(id) ?? 0
       const diff   = bPlani - bPat
-      let estado: FilaComparacion['Estado']
-      if (diff !== 0)  estado = 'diferencia'
-      else             estado = 'ok'
       resultado.push({
         ID: id, Transporte: item.Transporte,
         CodigoArticulo: item.CodigoArticulo, Descripcion: item.Descripcion,
-        BultosPlani: bPlani, BultosPat: bPat, Diferencia: diff, Estado: estado,
+        BultosPlani: bPlani, BultosPat: bPat, Diferencia: diff,
+        Estado: diff !== 0 ? 'diferencia' : 'ok',
       })
     }
 
