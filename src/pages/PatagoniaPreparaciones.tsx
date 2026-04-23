@@ -243,28 +243,36 @@ export default function PatagoniaPreparaciones() {
       mapaPat.set(key, (mapaPat.get(key) ?? 0) + (row.Unidades || 0))
     }
 
+    // Set de repartos que SÍ tienen al menos una prep Completada esa fecha
+    // Solo los ítems de planilla cuyo reparto esté en este set entran a la comparación
+    const repartosCompletados = new Set(patFiltrado.map(row => String(row.IdReparto ?? '')))
+
     // Mapa planilla: ID → item (para falta_pat)
     const mapaPlani = new Map<string, any>()
-    for (const item of planillaItems) mapaPlani.set(item.ID, item)
+    for (const item of planillaItems) {
+      // Solo considerar ítems cuyo reparto tiene preparaciones Completadas
+      const nroReparto = String(item.ID).match(/^(\d+)/)?.[1] ?? ''
+      if (repartosCompletados.has(nroReparto)) mapaPlani.set(item.ID, item)
+    }
 
     const resultado: FilaComparacion[] = []
 
-    // 1. Iterar sobre PLANILLA — incluye casos donde Patagonia=0 o no existe
-    for (const item of planillaItems) {
+    // 1. Iterar sobre planilla FILTRADA (solo repartos con prep Completada)
+    for (const [id, item] of mapaPlani) {
       const bPlani = item.Bultos ?? 0
-      const bPat   = mapaPat.get(item.ID) ?? 0  // 0 si no existe en Patagonia
+      const bPat   = mapaPat.get(id) ?? 0
       const diff   = bPlani - bPat
       let estado: FilaComparacion['Estado']
-      if (diff !== 0)  estado = 'diferencia'  // incluye bPat=0: plani=1,pat=0 → dif=+1
+      if (diff !== 0)  estado = 'diferencia'
       else             estado = 'ok'
       resultado.push({
-        ID: item.ID, Transporte: item.Transporte,
+        ID: id, Transporte: item.Transporte,
         CodigoArticulo: item.CodigoArticulo, Descripcion: item.Descripcion,
         BultosPlani: bPlani, BultosPat: bPat, Diferencia: diff, Estado: estado,
       })
     }
 
-    // 2. Iterar sobre Patagonia Completada — agregar los que NO están en planilla (falta_pat)
+    // 2. Patagonia completó algo que no estaba en planilla → falta_pat
     for (const [id, unidades] of mapaPat) {
       if (!mapaPlani.has(id)) {
         const row = patFiltrado.find(r => (r.IdReparto ?? '') + String(r.CodigoArticulo ?? '') === id)
