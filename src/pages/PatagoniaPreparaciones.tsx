@@ -268,9 +268,9 @@ export default function PatagoniaPreparaciones() {
       const diff   = bPlani - bPat
 
       let estado: FilaComparacion['Estado']
-      if (bPlani === 0)      estado = 'falta_pat'   // Pat completó, no estaba en planilla
-      else if (diff !== 0)  estado = 'diferencia'  // incluye bPat=0: planilla=9, pat=0 → dif=9
-      else                  estado = 'ok'
+      if (bPlani === 0 && bPat > 0) estado = 'falta_pat'   // Pat completó, no estaba en planilla
+      else if (diff !== 0)          estado = 'diferencia'  // cualquier dif, incl. bPat=0
+      else                          estado = 'ok'
 
       resultado.push({
         ID: id,
@@ -580,6 +580,7 @@ export default function PatagoniaPreparaciones() {
                           <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Patagonia</th>
                           <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Dif.</th>
                           <th className="text-center px-4 py-2 text-dark-400 text-xs uppercase">Estado</th>
+                          <th className="text-center px-4 py-2 text-dark-400 text-xs uppercase">Acción</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -602,6 +603,11 @@ export default function PatagoniaPreparaciones() {
                                   {f.Estado==='ok' && <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs">OK</span>}
                                   {f.Estado==='diferencia' && <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">Diferencia</span>}
                                   {f.Estado==='falta_pat' && <span className="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded text-xs">Falta Pat.</span>}
+                                </td>
+                                <td className="px-4 py-2 text-center">
+                                  {f.Diferencia > 0 && <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-xs font-medium">Agregar</span>}
+                                  {f.Diferencia < 0 && <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs font-medium">Quitar</span>}
+                                  {f.Diferencia === 0 && <span className="text-dark-600 text-xs">—</span>}
                                 </td>
                               </tr>
                             )
