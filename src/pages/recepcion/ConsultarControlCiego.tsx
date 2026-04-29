@@ -2,9 +2,6 @@ import { useState, useEffect } from 'react'
 import Layout from '../../components/Layout'
 import { Search, RefreshCw, AlertCircle, ChevronDown, ChevronUp, Download } from 'lucide-react'
 
-const API_KEY = '45124045-32f8-4a32-b201-e252d7aa06aa'
-const BASE_URL = 'http://api.patagoniawms.com'
-const HEADERS = { 'X-API-KEY': API_KEY, 'Accept': 'application/json' }
 const ESTADOS = ['sinControl','pendienteControl','enProcesoControl','controlado','verificado','guardado']
 
 interface CCDetalle {
@@ -16,9 +13,7 @@ interface CCItem {
   ControlCiegoDetalle: CCDetalle[]; DocumentoRecepcion: any[]
 }
 
-function toISO(d: Date) {
-  return d.toISOString().split('T')[0]
-}
+function toISO(d: Date) { return d.toISOString().split('T')[0] }
 
 function BadgeEstado({ estado }: { estado: string }) {
   const map: Record<string, string> = {
@@ -55,46 +50,34 @@ export default function ConsultarControlCiego() {
   const [expandidos, setExpandidos] = useState<Set<number>>(new Set())
   const [fechaRango, setFechaRango] = useState('')
 
-  // Consultar automáticamente al montar
+  const SUPA_URL = import.meta.env.VITE_SUPABASE_URL
+  const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+
   useEffect(() => { consultar() }, [])
 
   const consultar = async () => {
     setCargando(true); setError(''); setItems([])
-
-    // Calcular últimos 2 días: hoy y ayer
     const hoy = new Date()
     const ayer = new Date(hoy); ayer.setDate(ayer.getDate() - 1)
     const fechaHoy = toISO(hoy)
     const fechaAyer = toISO(ayer)
     setFechaRango(fechaAyer + ' → ' + fechaHoy)
-
     try {
-      // Consultar ambos días en paralelo
-      const fetchDia = async (fecha: string) => {
-        const params = new URLSearchParams()
-        params.set('Fecha', fecha)
-        if (filtros.DocumentoNumero) params.set('DocumentoNumero', filtros.DocumentoNumero)
-        if (filtros.CodigoProveedor) params.set('CodigoProveedor', filtros.CodigoProveedor)
-        if (filtros.Estado)          params.set('Estado', filtros.Estado)
-        if (filtros.OrdenCompra)     params.set('OrdenCompra', filtros.OrdenCompra)
-        const res = await fetch(`${BASE_URL}/v1/ControlCiego/List?${params}`, { headers: HEADERS })
-        if (!res.ok) return []
-        const data = await res.json()
-        return Array.isArray(data) ? data : (data.data || data.items || [])
-      }
-
-      const [itemsHoy, itemsAyer] = await Promise.all([fetchDia(fechaHoy), fetchDia(fechaAyer)])
-      const todos: CCItem[] = [...itemsHoy, ...itemsAyer]
-
-      // Deduplicar por Id
-      const vistos = new Set<number>()
-      const deduplicados = todos.filter(i => { if (vistos.has(i.Id)) return false; vistos.add(i.Id); return true })
-
-      // Ordenar por fecha desc
-      deduplicados.sort((a, b) => b.Fecha?.localeCompare(a.Fecha ?? '') ?? 0)
-
-      setItems(deduplicados)
-      if (!deduplicados.length) setError('No se encontraron controles ciegos en los últimos 2 días.')
+      const res = await fetch(SUPA_URL + '/functions/v1/control-ciego', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY, 'apikey': SUPA_KEY },
+        body: JSON.stringify({
+          fechas: [fechaHoy, fechaAyer],
+          ...( filtros.DocumentoNumero && { DocumentoNumero: filtros.DocumentoNumero }),
+          ...( filtros.CodigoProveedor && { CodigoProveedor: filtros.CodigoProveedor }),
+          ...( filtros.Estado          && { Estado: filtros.Estado }),
+          ...( filtros.OrdenCompra     && { OrdenCompra: filtros.OrdenCompra }),
+        })
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.error ?? 'Error desconocido')
+      setItems(data.items ?? [])
+      if (!data.items?.length) setError('No se encontraron controles ciegos en los últimos 2 días.')
     } catch (e) {
       setError('Error al consultar: ' + String(e))
     } finally {
@@ -130,7 +113,6 @@ export default function ConsultarControlCiego() {
           </div>
         </div>
 
-        {/* Filtros opcionales */}
         <div className="card rounded-xl p-4 mb-5">
           <p className="text-dark-400 text-xs uppercase font-medium mb-3">Filtros opcionales</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -168,7 +150,6 @@ export default function ConsultarControlCiego() {
           </div>
         </div>
 
-        {/* Loading */}
         {cargando && (
           <div className="card rounded-xl p-8 text-center">
             <RefreshCw className="w-8 h-8 text-primary-400 animate-spin mx-auto mb-3" />
@@ -176,7 +157,6 @@ export default function ConsultarControlCiego() {
           </div>
         )}
 
-        {/* Error */}
         {error && !cargando && (
           <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-4 flex gap-3">
             <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
@@ -184,17 +164,15 @@ export default function ConsultarControlCiego() {
           </div>
         )}
 
-        {/* Stats */}
         {items.length > 0 && !cargando && (
           <div className="flex items-center gap-4 mb-3">
-            <span className="text-dark-400 text-sm">{items.length} control{items.length !== 1 ? 'es' : ''} encontrado{items.length !== 1 ? 's' : ''}</span>
+            <span className="text-dark-400 text-sm">{items.length} control{items.length !== 1 ? 'es' : ''}</span>
             <button onClick={() => setExpandidos(new Set(items.map(i => i.Id)))} className="text-xs text-dark-400 hover:text-white transition-colors">Expandir todo</button>
             <span className="text-dark-600">·</span>
             <button onClick={() => setExpandidos(new Set())} className="text-xs text-dark-400 hover:text-white transition-colors">Colapsar todo</button>
           </div>
         )}
 
-        {/* Resultados */}
         {!cargando && (
           <div className="space-y-2">
             {items.map(item => {
