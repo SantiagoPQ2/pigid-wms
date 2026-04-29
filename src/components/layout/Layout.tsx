@@ -12,6 +12,7 @@ const navItems = [
   { label: 'Recepcion', icon: PackageCheck, children: [
     { label: 'Documentos', path: '/recepcion/documentos' },
     { label: 'Control Ciego', path: '/recepcion/control-ciego' },
+    { label: 'Consultar Control Ciego', path: '/recepcion/consultar-control-ciego' },
   ]},
   { label: 'Deposito', icon: Warehouse, children: [
     { label: 'Areas', path: '/deposito/areas' },
@@ -30,21 +31,21 @@ const navItems = [
     { label: 'Transportes', path: '/despacho/transportes' },
   ]},
   { label: 'Configuracion', icon: Settings, children: [
-    { label: 'Artículos', path: '/configuracion/articulos' },
+    { label: 'ArtÃ­culos', path: '/configuracion/articulos' },
     { label: 'Clientes', path: '/configuracion/clientes' },
     { label: 'Proveedores', path: '/configuracion/proveedores' },
     { label: 'Contenedores', path: '/configuracion/contenedores' },
     { label: 'Impresoras', path: '/configuracion/impresoras' },
     { label: 'Usuarios', path: '/configuracion/usuarios' },
     { label: 'Transportes', path: '/configuracion/transportes' },
-    { label: 'Tipo de Ubicación', path: '/configuracion/tipo-ubicacion' },
+    { label: 'Tipo de UbicaciÃ³n', path: '/configuracion/tipo-ubicacion' },
     { label: 'Motivo Ajuste', path: '/configuracion/motivo-ajuste' },
     { label: 'Negocio', path: '/configuracion/negocio' },
   ]},
   { label: 'Reportes', icon: BarChart2, children: [
     { label: 'Consultar Stock', path: '/reportes/stock' },
     { label: 'Tareas Activas', path: '/reportes/tareas-activas' },
-    { label: 'Estadísticas', path: '/reportes/estadisticas' },
+    { label: 'EstadÃ­sticas', path: '/reportes/estadisticas' },
     { label: 'Carga Pedidos ERP', path: '/erp/carga-pedidos' },
     { label: 'Patagonia WMS', path: '/reportes/patagonia' },
     { label: 'Planilla de Carga', path: '/reportes/planilla-carga' },
@@ -53,10 +54,10 @@ const navItems = [
 
 const bottomTabs = [
   { label: 'Inicio', icon: LayoutDashboard, path: '/' },
-  { label: 'Recepción', icon: PackageCheck, path: '/recepcion/documentos' },
-  { label: 'Preparación', icon: ClipboardList, path: '/preparacion/preparaciones' },
+  { label: 'RecepciÃ³n', icon: PackageCheck, path: '/recepcion/documentos' },
+  { label: 'PreparaciÃ³n', icon: ClipboardList, path: '/preparacion/preparaciones' },
   { label: 'Despacho', icon: Send, path: '/despacho/despachos' },
-  { label: 'Menú', icon: Menu, path: '__menu__' },
+  { label: 'MenÃº', icon: Menu, path: '__menu__' },
 ]
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -98,7 +99,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-dark-900 font-sans">
 
-      {/* ── DESKTOP NAVBAR ──────────────────────────────────── */}
+      {/* ââ DESKTOP NAVBAR ââââââââââââââââââââââââââââââââââââ */}
       <header className="hidden md:flex bg-dark-800 border-b border-dark-600 sticky top-0 z-50 h-14 items-center px-4 gap-4">
         <Link to="/" className="flex items-center gap-2 mr-4 shrink-0">
           <div className="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center">
@@ -160,7 +161,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {/* ── MOBILE TOP BAR ───────────────────────────────────── */}
+      {/* ââ MOBILE TOP BAR âââââââââââââââââââââââââââââââââââââ */}
       <header className="flex md:hidden bg-dark-800 border-b border-dark-600 sticky top-0 z-50 h-14 items-center px-4 justify-between">
         <Link to="/" className="flex items-center gap-2">
           <div className="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center">
@@ -176,7 +177,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {/* ── MOBILE SIDE DRAWER ──────────────────────────────── */}
+      {/* ââ MOBILE SIDE DRAWER ââââââââââââââââââââââââââââââââ */}
       {mobileOpen && (
         <div className="fixed inset-0 z-[200] md:hidden flex">
           <div className="absolute inset-0 bg-black/60" onClick={() => { setMobileOpen(false); setMobileSection(null) }} />
@@ -241,19 +242,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div className="border-t border-dark-700 p-4">
               <button onClick={handleSignOut} className="w-full flex items-center gap-3 text-sm text-gray-400 hover:text-red-400 transition-colors py-2">
                 <LogOut className="w-4 h-4" />
-                Cerrar sesión
+                Cerrar sesiÃ³n
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── PAGE CONTENT ─────────────────────────────────────── */}
+      {/* ââ PAGE CONTENT âââââââââââââââââââââââââââââââââââââââ */}
       <main className="pb-20 md:pb-0">
         {children}
       </main>
 
-      {/* ── MOBILE BOTTOM TAB BAR ────────────────────────────── */}
+      {/* ââ MOBILE BOTTOM TAB BAR ââââââââââââââââââââââââââââââ */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-dark-800 border-t border-dark-600 flex">
         {bottomTabs.map(tab => {
           const active = tab.path === '__menu__' ? mobileOpen : isActive(tab.path)
