@@ -8,6 +8,7 @@ import NotFound from './pages/NotFound'
 // Recepcion
 import RecepcionDocumentos from './pages/recepcion/RecepcionDocumentos'
 import ControlCiego from './pages/recepcion/ControlCiego'
+import ConsultarControlCiego from './pages/recepcion/ConsultarControlCiego'
 // Deposito
 import Areas from './pages/deposito/Areas'
 import Ubicaciones from './pages/deposito/Ubicaciones'
@@ -66,6 +67,7 @@ export default function App() {
             {/* Recepcion */}
             <Route path="/recepcion/documentos" element={<Protected><RecepcionDocumentos /></Protected>} />
             <Route path="/recepcion/control-ciego" element={<Protected><ControlCiego /></Protected>} />
+            <Route path="/recepcion/consultar-control-ciego" element={<Protected><ConsultarControlCiego /></Protected>} />
 
             {/* Deposito */}
             <Route path="/deposito/areas" element={<Protected><Areas /></Protected>} />
