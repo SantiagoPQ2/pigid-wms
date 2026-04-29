@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Layout from '../../components/Layout'
 import { Search, RefreshCw, AlertCircle, ChevronDown, ChevronUp, Download } from 'lucide-react'
 
@@ -95,7 +95,6 @@ export default function ConsultarControlCiego() {
   const SUPA_URL = import.meta.env.VITE_SUPABASE_URL
   const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-  useEffect(() => { consultar() }, [])
 
   const consultar = async () => {
     setCargando(true); setError(''); setItems([])
@@ -214,7 +213,17 @@ export default function ConsultarControlCiego() {
           </div>
         )}
 
-        {!cargando && (
+        {!cargando && items.length === 0 && !error && (
+          <div className="card rounded-xl p-16 text-center">
+            <svg className="w-14 h-14 mx-auto mb-4 text-dark-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <p className="text-white font-semibold text-lg mb-2">Consultá los controles ciegos</p>
+            <p className="text-dark-400 text-sm">Hacé click en "Consultar" para traer los últimos 2 días</p>
+          </div>
+        )}
+
+        {!cargando && items.length > 0 && (
           <div className="space-y-2">
             {items.map(item => {
               const expanded = expandidos.has(item.Id)
@@ -256,19 +265,19 @@ export default function ConsultarControlCiego() {
                   </button>
                   {expanded && (
                     <div className="border-t border-dark-700 overflow-x-auto">
-                      <table className="w-full text-xs">
+                      <table className="w-full text-sm">
                         <thead>
-                          <tr className="border-b border-dark-700 bg-dark-800/50">
-                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Código</th>
-                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Artículo</th>
-                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Lote Inf.</th>
-                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Lote Rec.</th>
-                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Venc. Inf.</th>
-                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Venc. Rec.</th>
-                            <th className="text-right px-3 py-2 text-dark-400 uppercase">Cant. Inf.</th>
-                            <th className="text-right px-3 py-2 text-dark-400 uppercase">Cant. Rec.</th>
-                            <th className="text-right px-3 py-2 text-dark-400 uppercase">Diferencia</th>
-                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Contenedor</th>
+                          <tr className="border-b border-dark-700 bg-dark-800/60">
+                            <th className="text-left px-4 py-3 text-dark-400 text-xs font-semibold uppercase tracking-wider">Código</th>
+                            <th className="text-left px-4 py-3 text-dark-400 text-xs font-semibold uppercase tracking-wider">Artículo</th>
+                            <th className="text-left px-4 py-3 text-dark-400 text-xs font-semibold uppercase tracking-wider">Lote Inf.</th>
+                            <th className="text-left px-4 py-3 text-dark-400 text-xs font-semibold uppercase tracking-wider">Lote Rec.</th>
+                            <th className="text-left px-4 py-3 text-dark-400 text-xs font-semibold uppercase tracking-wider">Venc. Inf.</th>
+                            <th className="text-left px-4 py-3 text-dark-400 text-xs font-semibold uppercase tracking-wider">Venc. Rec.</th>
+                            <th className="text-right px-4 py-3 text-dark-400 text-xs font-semibold uppercase tracking-wider">Cant. Inf.</th>
+                            <th className="text-right px-4 py-3 text-dark-400 text-xs font-semibold uppercase tracking-wider">Cant. Rec.</th>
+                            <th className="text-right px-4 py-3 text-dark-400 text-xs font-semibold uppercase tracking-wider">Diferencia</th>
+                            <th className="text-center px-4 py-3 text-dark-400 text-xs font-semibold uppercase tracking-wider">Contenedores</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -281,22 +290,22 @@ export default function ConsultarControlCiego() {
                             const cantRec = d.Unidades ?? null
                             const dif = cantInf != null && cantRec != null ? cantRec - cantInf : null
                             return (
-                              <tr key={i} className={`border-b border-dark-800 hover:bg-dark-800/30 ${dif !== null && dif !== 0 ? 'bg-red-500/5' : ''}`}>
-                                <td className="px-3 py-2 text-primary-400 font-mono font-semibold">{d.CodigoArticulo}</td>
-                                <td className="px-3 py-2 text-white">{d.Articulo || d.Descripcion || '—'}</td>
-                                <td className="px-3 py-2 text-dark-300 font-mono">{inf?.Lote || '—'}</td>
-                                <td className="px-3 py-2 text-dark-300 font-mono">{d.Lote || '—'}</td>
-                                <td className="px-3 py-2 text-dark-300">{inf?.FechaVencimiento?.split('T')[0] || '—'}</td>
-                                <td className="px-3 py-2 text-dark-300">{d.FechaVencimiento?.split('T')[0] || '—'}</td>
-                                <td className="px-3 py-2 text-right text-white font-semibold">{cantInf ?? '—'}</td>
-                                <td className="px-3 py-2 text-right text-white font-semibold">{cantRec ?? '—'}</td>
-                                <td className="px-3 py-2 text-right">
-                                  {dif === null ? <span className="text-dark-500">—</span>
-                                    : dif === 0 ? <span className="bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded text-xs">Satisfactorio</span>
-                                    : <span className={`font-bold ${dif > 0 ? 'text-green-400' : 'text-red-400'}`}>{dif > 0 ? '+' : ''}{dif}</span>
+                              <tr key={i} className={`border-b border-dark-800 hover:bg-dark-800/40 transition-colors ${dif !== null && dif !== 0 ? 'bg-red-500/5' : ''}`}>
+                                <td className="px-4 py-3 text-primary-400 font-mono font-semibold text-sm">{d.CodigoArticulo}</td>
+                                <td className="px-4 py-3 text-white font-medium">{d.Articulo || d.Descripcion || '—'}</td>
+                                <td className="px-4 py-3 text-dark-400 font-mono text-xs">{inf?.Lote || <span className="text-dark-600">—</span>}</td>
+                                <td className="px-4 py-3 text-dark-400 font-mono text-xs">{d.Lote || <span className="text-dark-600">—</span>}</td>
+                                <td className="px-4 py-3 text-dark-400 text-xs">{inf?.FechaVencimiento?.split('T')[0] || <span className="text-dark-600">—</span>}</td>
+                                <td className="px-4 py-3 text-dark-400 text-xs">{d.FechaVencimiento?.split('T')[0] || <span className="text-dark-600">—</span>}</td>
+                                <td className="px-4 py-3 text-right text-white font-bold">{cantInf?.toLocaleString() ?? <span className="text-dark-500">—</span>}</td>
+                                <td className="px-4 py-3 text-right text-white font-bold">{cantRec?.toLocaleString() ?? <span className="text-dark-500">—</span>}</td>
+                                <td className="px-4 py-3 text-right">
+                                  {dif === null ? <span className="text-dark-600">—</span>
+                                    : dif === 0 ? <span className="bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-0.5 rounded-full text-xs font-medium">✓ Satisfactorio</span>
+                                    : <span className={`font-bold text-sm ${dif > 0 ? 'text-green-400' : 'text-red-400'}`}>{dif > 0 ? '+' : ''}{dif.toLocaleString()}</span>
                                   }
                                 </td>
-                                <td className="px-3 py-2 text-dark-400 text-xs">{d.Contenedores?.length || '—'} cont.</td>
+                                <td className="px-4 py-3 text-center text-dark-400 text-xs">{d.Contenedores?.length ?? '—'}</td>
                               </tr>
                             )
                           })}
