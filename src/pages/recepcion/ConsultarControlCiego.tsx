@@ -4,13 +4,40 @@ import { Search, RefreshCw, AlertCircle, ChevronDown, ChevronUp, Download } from
 
 const ESTADOS = ['sinControl','pendienteControl','enProcesoControl','controlado','verificado','guardado']
 
-interface CCDetalle {
-  Contenedor: string; CodigoArticulo: string; Lote: string; Descripcion: string
-  CantidadEsperada: number; CantidadContada: number; Diferencia: number; FechaVencimiento: string | null
+interface CCDetalleItem {
+  Contenedor: string
+  CodigoArticulo: string
+  Articulo: string
+  Lote: string | null
+  FechaVencimiento: string | null
+  Unidades: number
+  // Del detalle completo via /v1/ControlCiego
+  CantidadEsperada?: number
+  CantidadContada?: number
+  Diferencia?: number
+  Descripcion?: string
+  LoteRecibido?: string
+  FechaVencimientoRecibido?: string | null
+  CantidadBultosInformado?: number
+  CantidadBultosRecibido?: number
 }
+
+interface DocRecepcion {
+  Id: number
+  Numero: string
+  Fecha: string
+  Proveedor: string
+  OrdenCompra: string | null
+  DocumentoRecepcionDetalle: {
+    CodigoArticulo: string; Lote: string | null; FechaVencimiento: string | null
+    Unidades: number; Linea: number
+  }[]
+}
+
 interface CCItem {
   Id: number; Fecha: string; Estado: string; Ubicacion: string; Modo: string
-  ControlCiegoDetalle: CCDetalle[]; DocumentoRecepcion: any[]
+  ControlCiegoDetalle: CCDetalleItem[]
+  DocumentoRecepcion: DocRecepcion[]
 }
 
 function toISO(d: Date) { return d.toISOString().split('T')[0] }
@@ -23,19 +50,34 @@ function BadgeEstado({ estado }: { estado: string }) {
     controlado: 'bg-green-500/20 text-green-400',
     verificado: 'bg-primary-500/20 text-primary-400',
     guardado: 'bg-green-700/20 text-green-300',
+    Guardado: 'bg-green-700/20 text-green-300',
   }
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${map[estado] ?? 'bg-dark-700 text-dark-400'}`}>{estado}</span>
 }
 
 function exportarCSV(items: CCItem[]) {
-  const rows = ['Id;Fecha;Estado;Ubicacion;Modo;Contenedor;CodigoArticulo;Descripcion;Lote;CantEsperada;CantContada;Diferencia;FechaVencimiento']
-  for (const item of items)
-    for (const d of (item.ControlCiegoDetalle || []))
+  const rows = ['Id;Fecha;Estado;Ubicacion;Modo;Contenedor;Codigo;Articulo;LoteInformado;LoteRecibido;VencInformado;VencRecibido;CantInformada;BultosInformados;CantRecibida;BultosRecibidos;DifCantidad;Diferencia']
+  for (const item of items) {
+    // Construir mapa de datos informados desde DocumentoRecepcion
+    const mapaInformado = new Map<string, any>()
+    for (const doc of (item.DocumentoRecepcion || [])) {
+      for (const det of (doc.DocumentoRecepcionDetalle || [])) {
+        mapaInformado.set(det.CodigoArticulo, det)
+      }
+    }
+    for (const d of (item.ControlCiegoDetalle || [])) {
+      const inf = mapaInformado.get(d.CodigoArticulo)
       rows.push([
         item.Id, item.Fecha?.split('T')[0] ?? '', item.Estado, item.Ubicacion ?? '', item.Modo ?? '',
-        d.Contenedor ?? '', d.CodigoArticulo ?? '', d.Descripcion ?? '', d.Lote ?? '',
-        d.CantidadEsperada ?? '', d.CantidadContada ?? '', d.Diferencia ?? '', d.FechaVencimiento?.split('T')[0] ?? ''
+        d.Contenedor ?? '', d.CodigoArticulo, d.Articulo ?? d.Descripcion ?? '',
+        inf?.Lote ?? '', d.Lote ?? '',
+        inf?.FechaVencimiento?.split('T')[0] ?? '', d.FechaVencimiento?.split('T')[0] ?? '',
+        inf?.Unidades ?? '', '',
+        d.Unidades ?? '', '',
+        '', ''
       ].join(';'))
+    }
+  }
   const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a'); a.href = url; a.download = 'control_ciego.csv'; a.click()
@@ -59,19 +101,17 @@ export default function ConsultarControlCiego() {
     setCargando(true); setError(''); setItems([])
     const hoy = new Date()
     const ayer = new Date(hoy); ayer.setDate(ayer.getDate() - 1)
-    const fechaHoy = toISO(hoy)
-    const fechaAyer = toISO(ayer)
-    setFechaRango(fechaAyer + ' → ' + fechaHoy)
+    setFechaRango(toISO(ayer) + ' → ' + toISO(hoy))
     try {
       const res = await fetch(SUPA_URL + '/functions/v1/control-ciego', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY, 'apikey': SUPA_KEY },
         body: JSON.stringify({
-          fechas: [fechaHoy, fechaAyer],
-          ...( filtros.DocumentoNumero && { DocumentoNumero: filtros.DocumentoNumero }),
-          ...( filtros.CodigoProveedor && { CodigoProveedor: filtros.CodigoProveedor }),
-          ...( filtros.Estado          && { Estado: filtros.Estado }),
-          ...( filtros.OrdenCompra     && { OrdenCompra: filtros.OrdenCompra }),
+          fechas: [toISO(hoy), toISO(ayer)],
+          ...(filtros.DocumentoNumero && { DocumentoNumero: filtros.DocumentoNumero }),
+          ...(filtros.CodigoProveedor && { CodigoProveedor: filtros.CodigoProveedor }),
+          ...(filtros.Estado          && { Estado: filtros.Estado }),
+          ...(filtros.OrdenCompra     && { OrdenCompra: filtros.OrdenCompra }),
         })
       })
       const data = await res.json()
@@ -92,7 +132,7 @@ export default function ConsultarControlCiego() {
 
   return (
     <Layout>
-      <div className="p-6 max-w-6xl mx-auto">
+      <div className="p-6 max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Control Ciego — Últimos 2 días</h1>
@@ -113,6 +153,7 @@ export default function ConsultarControlCiego() {
           </div>
         </div>
 
+        {/* Filtros opcionales */}
         <div className="card rounded-xl p-4 mb-5">
           <p className="text-dark-400 text-xs uppercase font-medium mb-3">Filtros opcionales</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -120,19 +161,19 @@ export default function ConsultarControlCiego() {
               <label className="text-dark-500 text-xs mb-1 block">Nro. Documento</label>
               <input type="text" value={filtros.DocumentoNumero} onChange={e => setF('DocumentoNumero', e.target.value)}
                 placeholder="Ej: 00001234"
-                className="w-full bg-dark-800 border border-dark-600 focus:border-primary-500 rounded-lg px-3 py-2 text-sm text-white outline-none transition-all" />
+                className="w-full bg-dark-800 border border-dark-600 focus:border-primary-500 rounded-lg px-3 py-2 text-sm text-white outline-none" />
             </div>
             <div>
               <label className="text-dark-500 text-xs mb-1 block">Código Proveedor</label>
               <input type="text" value={filtros.CodigoProveedor} onChange={e => setF('CodigoProveedor', e.target.value)}
                 placeholder="Código"
-                className="w-full bg-dark-800 border border-dark-600 focus:border-primary-500 rounded-lg px-3 py-2 text-sm text-white outline-none transition-all" />
+                className="w-full bg-dark-800 border border-dark-600 focus:border-primary-500 rounded-lg px-3 py-2 text-sm text-white outline-none" />
             </div>
             <div>
               <label className="text-dark-500 text-xs mb-1 block">Estado</label>
               <div className="relative">
                 <select value={filtros.Estado} onChange={e => setF('Estado', e.target.value)}
-                  className="w-full appearance-none bg-dark-800 border border-dark-600 focus:border-primary-500 rounded-lg pl-3 pr-8 py-2 text-sm text-white outline-none transition-all">
+                  className="w-full appearance-none bg-dark-800 border border-dark-600 focus:border-primary-500 rounded-lg pl-3 pr-8 py-2 text-sm text-white outline-none">
                   <option value="">Todos</option>
                   {ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
                 </select>
@@ -145,7 +186,7 @@ export default function ConsultarControlCiego() {
               <label className="text-dark-500 text-xs mb-1 block">Orden de Compra</label>
               <input type="text" value={filtros.OrdenCompra} onChange={e => setF('OrdenCompra', e.target.value)}
                 placeholder="Número de OC"
-                className="w-full bg-dark-800 border border-dark-600 focus:border-primary-500 rounded-lg px-3 py-2 text-sm text-white outline-none transition-all" />
+                className="w-full bg-dark-800 border border-dark-600 focus:border-primary-500 rounded-lg px-3 py-2 text-sm text-white outline-none" />
             </div>
           </div>
         </div>
@@ -179,6 +220,14 @@ export default function ConsultarControlCiego() {
               const expanded = expandidos.has(item.Id)
               const detalle = item.ControlCiegoDetalle || []
               const docs = item.DocumentoRecepcion || []
+              // Construir mapa de datos informados (del documento de recepción)
+              const mapaInf = new Map<string, any>()
+              for (const doc of docs) {
+                for (const d of (doc.DocumentoRecepcionDetalle || [])) {
+                  mapaInf.set(d.CodigoArticulo, d)
+                }
+              }
+              const totalArticulos = new Set(detalle.map(d => d.CodigoArticulo)).size
               return (
                 <div key={item.Id} className="card rounded-xl overflow-hidden">
                   <button onClick={() => toggle(item.Id)}
@@ -189,58 +238,60 @@ export default function ConsultarControlCiego() {
                       <span className="text-dark-400 text-xs">{item.Fecha?.split('T')[0] ?? '—'}</span>
                       {item.Ubicacion && <span className="text-xs text-blue-400">{item.Ubicacion}</span>}
                       {item.Modo && <span className="text-xs text-dark-500 capitalize">{item.Modo}</span>}
-                      <span className="text-xs text-dark-500">{detalle.length} artículo{detalle.length !== 1 ? 's' : ''}</span>
-                      {docs.length > 0 && <span className="text-xs text-primary-400">{docs.length} doc. recepción</span>}
+                      <span className="text-xs text-dark-500">{totalArticulos} artículo{totalArticulos !== 1 ? 's' : ''} · {detalle.length} contenedor{detalle.length !== 1 ? 'es' : ''}</span>
+                      {docs.length > 0 && <span className="text-xs text-primary-400">{docs.map(d => d.Numero).join(', ')}</span>}
                     </div>
                     {expanded ? <ChevronUp className="w-4 h-4 text-dark-500" /> : <ChevronDown className="w-4 h-4 text-dark-500" />}
                   </button>
-                  {expanded && detalle.length > 0 && (
+                  {expanded && (
                     <div className="border-t border-dark-700 overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <table className="w-full text-xs">
                         <thead>
                           <tr className="border-b border-dark-700 bg-dark-800/50">
-                            <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Contenedor</th>
-                            <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Código</th>
-                            <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Descripción</th>
-                            <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Lote</th>
-                            <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Esperada</th>
-                            <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Contada</th>
-                            <th className="text-right px-4 py-2 text-dark-400 text-xs uppercase">Diferencia</th>
-                            <th className="text-left px-4 py-2 text-dark-400 text-xs uppercase">Vencimiento</th>
+                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Código</th>
+                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Artículo</th>
+                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Lote Inf.</th>
+                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Lote Rec.</th>
+                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Venc. Inf.</th>
+                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Venc. Rec.</th>
+                            <th className="text-right px-3 py-2 text-dark-400 uppercase">Cant. Inf.</th>
+                            <th className="text-right px-3 py-2 text-dark-400 uppercase">Cant. Rec.</th>
+                            <th className="text-right px-3 py-2 text-dark-400 uppercase">Diferencia</th>
+                            <th className="text-left px-3 py-2 text-dark-400 uppercase">Contenedor</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {detalle.map((d, i) => (
-                            <tr key={i} className={`border-b border-dark-800 hover:bg-dark-800/40 ${d.Diferencia !== 0 ? 'bg-yellow-500/5' : ''}`}>
-                              <td className="px-4 py-2 text-dark-300 font-mono text-xs">{d.Contenedor || '—'}</td>
-                              <td className="px-4 py-2 text-primary-400 font-mono font-semibold">{d.CodigoArticulo}</td>
-                              <td className="px-4 py-2 text-white text-xs">{d.Descripcion || '—'}</td>
-                              <td className="px-4 py-2 text-dark-300 font-mono text-xs">{d.Lote || '—'}</td>
-                              <td className="px-4 py-2 text-right text-white font-semibold">{d.CantidadEsperada ?? '—'}</td>
-                              <td className="px-4 py-2 text-right text-white font-semibold">{d.CantidadContada ?? '—'}</td>
-                              <td className={`px-4 py-2 text-right font-bold ${d.Diferencia > 0 ? 'text-green-400' : d.Diferencia < 0 ? 'text-red-400' : 'text-dark-500'}`}>
-                                {d.Diferencia > 0 ? '+' : ''}{d.Diferencia ?? '—'}
-                              </td>
-                              <td className="px-4 py-2 text-dark-300 text-xs">{d.FechaVencimiento?.split('T')[0] || '—'}</td>
-                            </tr>
-                          ))}
+                          {detalle.length === 0 && (
+                            <tr><td colSpan={10} className="px-3 py-4 text-center text-dark-500">Sin detalle</td></tr>
+                          )}
+                          {detalle.map((d, i) => {
+                            const inf = mapaInf.get(d.CodigoArticulo)
+                            const cantInf = inf?.Unidades ?? null
+                            const cantRec = d.Unidades ?? null
+                            const dif = cantInf != null && cantRec != null ? cantRec - cantInf : null
+                            const esSatisfactorio = dif === 0
+                            return (
+                              <tr key={i} className={`border-b border-dark-800 hover:bg-dark-800/30 ${dif !== null && dif !== 0 ? 'bg-red-500/5' : ''}`}>
+                                <td className="px-3 py-2 text-primary-400 font-mono font-semibold">{d.CodigoArticulo}</td>
+                                <td className="px-3 py-2 text-white">{d.Articulo || d.Descripcion || '—'}</td>
+                                <td className="px-3 py-2 text-dark-300 font-mono">{inf?.Lote || '—'}</td>
+                                <td className="px-3 py-2 text-dark-300 font-mono">{d.Lote || '—'}</td>
+                                <td className="px-3 py-2 text-dark-300">{inf?.FechaVencimiento?.split('T')[0] || '—'}</td>
+                                <td className="px-3 py-2 text-dark-300">{d.FechaVencimiento?.split('T')[0] || '—'}</td>
+                                <td className="px-3 py-2 text-right text-white font-semibold">{cantInf ?? '—'}</td>
+                                <td className="px-3 py-2 text-right text-white font-semibold">{cantRec ?? '—'}</td>
+                                <td className="px-3 py-2 text-right">
+                                  {dif === null ? <span className="text-dark-500">—</span>
+                                    : dif === 0 ? <span className="bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded text-xs">Satisfactorio</span>
+                                    : <span className={`font-bold ${dif > 0 ? 'text-green-400' : 'text-red-400'}`}>{dif > 0 ? '+' : ''}{dif}</span>
+                                  }
+                                </td>
+                                <td className="px-3 py-2 text-dark-400 font-mono text-xs">{d.Contenedor || '—'}</td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
-                    </div>
-                  )}
-                  {expanded && detalle.length === 0 && (
-                    <div className="border-t border-dark-700 px-4 py-3 text-dark-500 text-sm">Sin detalle disponible</div>
-                  )}
-                  {expanded && docs.length > 0 && (
-                    <div className="border-t border-dark-700 px-4 py-2 bg-dark-800/20">
-                      <p className="text-dark-400 text-xs mb-1">Documentos de recepción:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {docs.map((doc: any, i: number) => (
-                          <span key={i} className="bg-primary-500/10 text-primary-400 px-2 py-0.5 rounded text-xs font-mono">
-                            {doc.Numero || doc.Id || String(doc)}
-                          </span>
-                        ))}
-                      </div>
                     </div>
                   )}
                 </div>
