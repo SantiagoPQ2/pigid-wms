@@ -220,14 +220,25 @@ export default function ConsultarControlCiego() {
               const expanded = expandidos.has(item.Id)
               const detalle = item.ControlCiegoDetalle || []
               const docs = item.DocumentoRecepcion || []
-              // Construir mapa de datos informados (del documento de recepción)
+              // Construir mapa de datos INFORMADOS desde DocumentoRecepcion
               const mapaInf = new Map<string, any>()
               for (const doc of docs) {
                 for (const d of (doc.DocumentoRecepcionDetalle || [])) {
-                  mapaInf.set(d.CodigoArticulo, d)
+                  if (!mapaInf.has(d.CodigoArticulo)) mapaInf.set(d.CodigoArticulo, {...d, Unidades: 0})
+                  mapaInf.get(d.CodigoArticulo).Unidades += (d.Unidades || 0)
                 }
               }
-              const totalArticulos = new Set(detalle.map(d => d.CodigoArticulo)).size
+              // Agrupar detalle RECIBIDO por CodigoArticulo (sumar todos los contenedores)
+              const mapaRec = new Map<string, any>()
+              for (const d of detalle) {
+                if (!mapaRec.has(d.CodigoArticulo)) {
+                  mapaRec.set(d.CodigoArticulo, { ...d, Unidades: 0, Contenedores: [] as string[] })
+                }
+                const entry = mapaRec.get(d.CodigoArticulo)
+                entry.Unidades += (d.Unidades || 0)
+                if (d.Contenedor) entry.Contenedores.push(d.Contenedor)
+              }
+              const totalArticulos = mapaRec.size
               return (
                 <div key={item.Id} className="card rounded-xl overflow-hidden">
                   <button onClick={() => toggle(item.Id)}
@@ -261,15 +272,14 @@ export default function ConsultarControlCiego() {
                           </tr>
                         </thead>
                         <tbody>
-                          {detalle.length === 0 && (
+                          {mapaRec.size === 0 && (
                             <tr><td colSpan={10} className="px-3 py-4 text-center text-dark-500">Sin detalle</td></tr>
                           )}
-                          {detalle.map((d, i) => {
+                          {Array.from(mapaRec.values()).map((d, i) => {
                             const inf = mapaInf.get(d.CodigoArticulo)
                             const cantInf = inf?.Unidades ?? null
                             const cantRec = d.Unidades ?? null
                             const dif = cantInf != null && cantRec != null ? cantRec - cantInf : null
-                            const esSatisfactorio = dif === 0
                             return (
                               <tr key={i} className={`border-b border-dark-800 hover:bg-dark-800/30 ${dif !== null && dif !== 0 ? 'bg-red-500/5' : ''}`}>
                                 <td className="px-3 py-2 text-primary-400 font-mono font-semibold">{d.CodigoArticulo}</td>
@@ -286,7 +296,7 @@ export default function ConsultarControlCiego() {
                                     : <span className={`font-bold ${dif > 0 ? 'text-green-400' : 'text-red-400'}`}>{dif > 0 ? '+' : ''}{dif}</span>
                                   }
                                 </td>
-                                <td className="px-3 py-2 text-dark-400 font-mono text-xs">{d.Contenedor || '—'}</td>
+                                <td className="px-3 py-2 text-dark-400 text-xs">{d.Contenedores?.length || '—'} cont.</td>
                               </tr>
                             )
                           })}
