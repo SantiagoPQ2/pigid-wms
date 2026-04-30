@@ -10,7 +10,7 @@ function parsearCSV(texto: string): Punto[] {
   const lineas = texto.trim().split(/\r?\n/)
   const puntos: Punto[] = []
   for (let i = 0; i < lineas.length; i++) {
-    const cols = lineas[i].split(/[,;]/).map(c => c.trim().replace(/^"|"$/g,''))
+    const cols = lineas[i].split(/[,;\t]/).map(c => c.trim().replace(/^"|"$/g,''))
     if (cols.length < 3) continue
     if (i === 0 && (isNaN(Number(cols[1])) || isNaN(Number(cols[2])))) continue
     const lat = parseFloat(cols[1]); const lon = parseFloat(cols[2])
@@ -185,7 +185,7 @@ export default function RutaGPS() {
                   <span className="bg-dark-700 hover:bg-dark-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
                     {puntos.length ? 'Cambiar' : 'Subir CSV'}
                   </span>
-                  <input type="file" accept=".csv,.txt" className="hidden" onChange={onCSV} />
+                  <input type="file" accept=".csv,.txt,.tsv" className="hidden" onChange={onCSV} />
                 </label>
               </div>
             </div>
