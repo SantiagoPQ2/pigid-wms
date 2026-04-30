@@ -56,25 +56,43 @@ function BadgeEstado({ estado }: { estado: string }) {
 }
 
 function exportarCSV(items: CCItem[]) {
-  const rows = ['Id;Fecha;Estado;Ubicacion;Modo;Contenedor;Codigo;Articulo;LoteInformado;LoteRecibido;VencInformado;VencRecibido;CantInformada;BultosInformados;CantRecibida;BultosRecibidos;DifCantidad;Diferencia']
+  const rows = ['Id;Fecha;Estado;Ubicacion;Modo;CodigoArticulo;Articulo;LoteInformado;LoteRecibido;VencInformado;VencRecibido;CantInformada;CantRecibida;Diferencia;NroContenedores']
   for (const item of items) {
-    // Construir mapa de datos informados desde DocumentoRecepcion
-    const mapaInformado = new Map<string, any>()
-    for (const doc of (item.DocumentoRecepcion || [])) {
-      for (const det of (doc.DocumentoRecepcionDetalle || [])) {
-        mapaInformado.set(det.CodigoArticulo, det)
+    // Mapa informado desde DocumentoRecepcion — sumar por CodigoArticulo
+    const mapaInf = new Map<string, any>()
+    for (const doc of (item.DocumentoRecepcion || []))
+      for (const d of (doc.DocumentoRecepcionDetalle || [])) {
+        const ex = mapaInf.get(d.CodigoArticulo)
+        if (ex) ex.Unidades += (d.Unidades || 0)
+        else mapaInf.set(d.CodigoArticulo, { ...d, Unidades: d.Unidades || 0 })
       }
-    }
+    // Mapa recibido desde ControlCiegoDetalle — sumar por CodigoArticulo
+    const mapaRec = new Map<string, { Unidades: number; Lote: string | null; FechaVencimiento: string | null; Articulo: string; nContenedores: number }>()
     for (const d of (item.ControlCiegoDetalle || [])) {
-      const inf = mapaInformado.get(d.CodigoArticulo)
+      const ex = mapaRec.get(d.CodigoArticulo)
+      if (ex) { ex.Unidades += (d.Unidades || 0); ex.nContenedores += 1 }
+      else mapaRec.set(d.CodigoArticulo, { Unidades: d.Unidades || 0, Lote: d.Lote, FechaVencimiento: d.FechaVencimiento, Articulo: (d as any).Articulo || '', nContenedores: 1 })
+    }
+    for (const [cod, rec] of mapaRec) {
+      const inf = mapaInf.get(cod)
+      const cantInf = inf?.Unidades ?? ''
+      const dif = cantInf !== '' ? rec.Unidades - (cantInf as number) : ''
       rows.push([
-        item.Id, item.Fecha?.split('T')[0] ?? '', item.Estado, item.Ubicacion ?? '', item.Modo ?? '',
-        d.Contenedor ?? '', d.CodigoArticulo, d.Articulo ?? d.Descripcion ?? '',
-        inf?.Lote ?? '', d.Lote ?? '',
-        inf?.FechaVencimiento?.split('T')[0] ?? '', d.FechaVencimiento?.split('T')[0] ?? '',
-        inf?.Unidades ?? '', '',
-        d.Unidades ?? '', '',
-        '', ''
+        item.Id,
+        item.Fecha?.split('T')[0] ?? '',
+        item.Estado,
+        item.Ubicacion ?? '',
+        item.Modo ?? '',
+        cod,
+        rec.Articulo,
+        inf?.Lote ?? '',
+        rec.Lote ?? '',
+        inf?.FechaVencimiento?.split('T')[0] ?? '',
+        rec.FechaVencimiento?.split('T')[0] ?? '',
+        cantInf,
+        rec.Unidades,
+        dif,
+        rec.nContenedores,
       ].join(';'))
     }
   }
