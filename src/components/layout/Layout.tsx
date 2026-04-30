@@ -43,6 +43,7 @@ const navItems = [
     { label: 'Negocio', path: '/configuracion/negocio' },
   ]},
   { label: 'Reportes', icon: BarChart2, children: [
+    { label: 'Ruta GPS', path: '/reportes/ruta-gps' },
     { label: 'Consultar Stock', path: '/reportes/stock' },
     { label: 'Tareas Activas', path: '/reportes/tareas-activas' },
     { label: 'EstadÃ­sticas', path: '/reportes/estadisticas' },
