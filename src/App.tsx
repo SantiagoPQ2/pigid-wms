@@ -9,6 +9,7 @@ import NotFound from './pages/NotFound'
 import RecepcionDocumentos from './pages/recepcion/RecepcionDocumentos'
 import ControlCiego from './pages/recepcion/ControlCiego'
 import ConsultarControlCiego from './pages/recepcion/ConsultarControlCiego'
+import RutaGPS from './pages/RutaGPS'
 // Deposito
 import Areas from './pages/deposito/Areas'
 import Ubicaciones from './pages/deposito/Ubicaciones'
@@ -98,6 +99,7 @@ export default function App() {
             <Route path="/configuracion/contenedores" element={<Protected><Contenedores /></Protected>} />
 
             {/* Reportes */}
+            <Route path="/reportes/ruta-gps" element={<Protected><RutaGPS /></Protected>} />
             <Route path="/reportes/stock" element={<Protected><ConsultarStock /></Protected>} />
             <Route path="/reportes/estadisticas" element={<Protected><Estadisticas /></Protected>} />
             <Route path="/reportes/tareas-activas" element={<Protected><TareasRealtime /></Protected>} />
