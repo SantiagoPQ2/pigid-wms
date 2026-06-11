@@ -20,6 +20,11 @@ interface Reparto {
   idreparto: number; idtransp: number; dstransp: string
   totcnt: number; totpes: number; totval: number; totpdv: number; bloqueada: boolean
 }
+interface ItemPedido {
+  idPedido: string; idLineaDetalle: number; idArticulo: number
+  cantBultos: number; cantUnidades: number; pesoKilos: number
+  precioUnitario: number; bonificacion: number; subtotal: number
+}
 interface PtoEntrega {
   idcliente: number; cpbte: string; dscliente: string; fantacli: string
   fecha: string; idreparto: number; idtransp: number; dstransp: string
@@ -27,6 +32,13 @@ interface PtoEntrega {
   xcoord: string; ycoord: string; ruta: number; rutadis: number
   totcnt: number; totpes: number; totval: number; totped: number
   detallecpbte: string; bloqueada: boolean
+  // campos enriquecidos desde API v1
+  pedidos_ids?: string[]
+  items?: ItemPedido[]
+  items_count?: number
+  total_bultos?: number
+  total_unidades?: number
+  total_peso_items?: number
 }
 interface Config {
   fecha: string; iddepo: number; dsdepo: string; identorno: number; dsentorno: string
@@ -48,12 +60,14 @@ function fmtImp(n: number) { return '$' + (n||0).toLocaleString('es-AR', {maximu
 
 // ─── Export XLSX ──────────────────────────────────────────────────────────────
 function exportarPedidosXlsx(ptos: PtoEntrega[], config: Config) {
-  const rows = ptos.map(p => ({
+  const wb = XLSX.utils.book_new()
+  // Hoja 1: resumen por punto de entrega
+  const resumen = ptos.map(p => ({
     'Cód. Cliente':  p.idcliente,
     'Cliente':       p.dscliente,
     'Fantasía':      p.fantacli,
     'Comprobante':   p.cpbte,
-    'Detalle':       p.detallecpbte,
+    'Pedidos IDs':   (p.pedidos_ids ?? []).join(', '),
     'Fecha':         p.fecha,
     'Dirección':     `${p.calle} ${p.altura}`,
     'Localidad':     p.dslocalidad,
@@ -61,64 +75,125 @@ function exportarPedidosXlsx(ptos: PtoEntrega[], config: Config) {
     'Latitud':       p.ycoord,
     'Longitud':      p.xcoord,
     'Ruta':          p.ruta,
-    'Ruta Dist.':    p.rutadis,
     'Reparto':       p.idreparto,
     'Transporte':    p.dstransp,
-    'Cant.':         p.totcnt,
-    'Peso (kg)':     p.totpes,
+    'Bultos ERP':    p.totcnt,
+    'Peso ERP (kg)': p.totpes,
     'Importe ($)':   p.totval,
-    'Pedidos':       p.totped,
+    'Artículos':     p.items_count ?? 0,
+    'Bultos v1':     p.total_bultos ?? 0,
+    'Peso v1 (kg)':  p.total_peso_items ?? 0,
     'Bloqueada':     p.bloqueada ? 'Sí' : 'No',
   }))
-  const ws = XLSX.utils.json_to_sheet(rows)
-  // Anchos de columna
-  ws['!cols'] = [
+  const wsRes = XLSX.utils.json_to_sheet(resumen)
+  wsRes['!cols'] = [
     {wch:12},{wch:28},{wch:20},{wch:22},{wch:35},{wch:12},
     {wch:28},{wch:20},{wch:16},{wch:12},{wch:12},{wch:8},
-    {wch:10},{wch:10},{wch:28},{wch:8},{wch:10},{wch:14},{wch:8},{wch:10}
+    {wch:10},{wch:28},{wch:12},{wch:12},{wch:14},{wch:10},{wch:12},{wch:12},{wch:10}
   ]
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Pedidos')
+  XLSX.utils.book_append_sheet(wb, wsRes, 'Pedidos')
+  // Hoja 2: detalle de artículos
+  const itemRows: Record<string, unknown>[] = []
+  for (const p of ptos) {
+    for (const item of (p.items ?? [])) {
+      itemRows.push({
+        'Cód. Cliente':   p.idcliente,
+        'Cliente':        p.dscliente,
+        'Comprobante':    p.cpbte,
+        'ID Pedido':      item.idPedido,
+        'Localidad':      p.dslocalidad,
+        'Transporte':     p.dstransp,
+        'Reparto':        p.idreparto,
+        'ID Artículo':    item.idArticulo,
+        'Cant. Bultos':   item.cantBultos,
+        'Cant. Unidades': item.cantUnidades,
+        'Peso (kg)':      item.pesoKilos,
+        'Precio Unit.':   item.precioUnitario,
+        'Bonif. (%)':     item.bonificacion,
+        'Subtotal ($)':   item.subtotal,
+      })
+    }
+  }
+  if (itemRows.length > 0) {
+    const wsItems = XLSX.utils.json_to_sheet(itemRows)
+    wsItems['!cols'] = [
+      {wch:12},{wch:28},{wch:22},{wch:22},{wch:20},{wch:28},
+      {wch:10},{wch:12},{wch:12},{wch:14},{wch:10},{wch:12},{wch:10},{wch:14}
+    ]
+    XLSX.utils.book_append_sheet(wb, wsItems, 'Artículos')
+  }
   XLSX.writeFile(wb, `pedidos_${config.fecha}_ent${config.identorno}.xlsx`)
 }
 
 function exportarRepartosXlsx(repartos: Reparto[], ptos: PtoEntrega[], config: Config) {
   const wb = XLSX.utils.book_new()
-  // Hoja resumen de repartos
-  const resumen = repartos.map(r => ({
-    'Reparto':      r.idreparto,
-    'Transporte':   r.dstransp,
-    'PDEs':         ptos.filter(p => p.idreparto === r.idreparto).length,
-    'Cant.':        r.totcnt,
-    'Peso (kg)':    r.totpes,
-    'Importe ($)':  r.totval,
-    'Bloqueado':    r.bloqueada ? 'Sí' : 'No',
-  }))
+  // Hoja 1: resumen de repartos
+  const resumen = repartos.map(r => {
+    const ptosR = ptos.filter(p => p.idreparto === r.idreparto)
+    return {
+      'Reparto':       r.idreparto,
+      'Transporte':    r.dstransp,
+      'PDEs':          ptosR.length,
+      'Bultos ERP':    r.totcnt,
+      'Peso ERP (kg)': r.totpes,
+      'Importe ($)':   r.totval,
+      'Artículos':     ptosR.reduce((s, p) => s + (p.items_count ?? 0), 0),
+      'Peso v1 (kg)':  ptosR.reduce((s, p) => s + (p.total_peso_items ?? 0), 0),
+      'Bloqueado':     r.bloqueada ? 'Sí' : 'No',
+    }
+  })
   const wsRes = XLSX.utils.json_to_sheet(resumen)
-  wsRes['!cols'] = [{wch:10},{wch:30},{wch:8},{wch:8},{wch:10},{wch:14},{wch:10}]
+  wsRes['!cols'] = [{wch:10},{wch:30},{wch:8},{wch:10},{wch:12},{wch:14},{wch:10},{wch:12},{wch:10}]
   XLSX.utils.book_append_sheet(wb, wsRes, 'Repartos')
-  // Una hoja por reparto con sus pedidos
+  // Una hoja por reparto con pedidos + artículos
   for (const r of repartos) {
     const ptosRep = ptos.filter(p => p.idreparto === r.idreparto)
     if (!ptosRep.length) continue
-    const rows = ptosRep.map(p => ({
+    // Sub-hoja: pedidos del reparto
+    const pedRows = ptosRep.map(p => ({
       'Cód. Cliente': p.idcliente,
       'Cliente':      p.dscliente,
       'Comprobante':  p.cpbte,
+      'Pedidos IDs':  (p.pedidos_ids ?? []).join(', '),
       'Dirección':    `${p.calle} ${p.altura}`,
       'Localidad':    p.dslocalidad,
       'Latitud':      p.ycoord,
       'Longitud':     p.xcoord,
       'Ruta':         p.ruta,
-      'Cant.':        p.totcnt,
-      'Peso (kg)':    p.totpes,
+      'Bultos ERP':   p.totcnt,
+      'Peso ERP (kg)':p.totpes,
       'Importe ($)':  p.totval,
+      'Artículos':    p.items_count ?? 0,
+      'Peso v1 (kg)': p.total_peso_items ?? 0,
     }))
-    const ws = XLSX.utils.json_to_sheet(rows)
-    ws['!cols'] = [{wch:12},{wch:28},{wch:22},{wch:28},{wch:20},{wch:12},{wch:12},{wch:8},{wch:8},{wch:10},{wch:14}]
-    // Nombre de hoja limitado a 31 chars (límite Excel)
+    const wsPed = XLSX.utils.json_to_sheet(pedRows)
+    wsPed['!cols'] = [{wch:12},{wch:28},{wch:22},{wch:35},{wch:28},{wch:20},{wch:12},{wch:12},{wch:8},{wch:10},{wch:12},{wch:14},{wch:10},{wch:12}]
     const nombre = `${r.idreparto}-${r.dstransp}`.substring(0, 31)
-    XLSX.utils.book_append_sheet(wb, ws, nombre)
+    XLSX.utils.book_append_sheet(wb, wsPed, nombre)
+    // Sub-hoja: artículos del reparto
+    const artRows: Record<string, unknown>[] = []
+    for (const p of ptosRep) {
+      for (const item of (p.items ?? [])) {
+        artRows.push({
+          'Cód. Cliente':   p.idcliente,
+          'Cliente':        p.dscliente,
+          'ID Pedido':      item.idPedido,
+          'ID Artículo':    item.idArticulo,
+          'Cant. Bultos':   item.cantBultos,
+          'Cant. Unidades': item.cantUnidades,
+          'Peso (kg)':      item.pesoKilos,
+          'Precio Unit.':   item.precioUnitario,
+          'Bonif. (%)':     item.bonificacion,
+          'Subtotal ($)':   item.subtotal,
+        })
+      }
+    }
+    if (artRows.length > 0) {
+      const wsArt = XLSX.utils.json_to_sheet(artRows)
+      wsArt['!cols'] = [{wch:12},{wch:28},{wch:22},{wch:12},{wch:12},{wch:14},{wch:10},{wch:12},{wch:10},{wch:14}]
+      const nombreArt = `Art-${r.idreparto}`.substring(0, 31)
+      XLSX.utils.book_append_sheet(wb, wsArt, nombreArt)
+    }
   }
   XLSX.writeFile(wb, `repartos_${config.fecha}_ent${config.identorno}.xlsx`)
 }
@@ -296,7 +371,7 @@ export default function RuteoAutomatico() {
   const cargarDistribucion = useCallback(async (cfg: Config) => {
     setCargandoDist(true); setError('')
     try {
-      const data = await callEdge('get_distribucion', { fecha: cfg.fecha, iddepo: cfg.iddepo, identorno: cfg.identorno })
+      const data = await callEdge('get_distribucion_detallada', { fecha: cfg.fecha, iddepo: cfg.iddepo, identorno: cfg.identorno })
       setRepartos(data.repartos ?? [])
       setPtosEntrega(data.ptos_entrega ?? [])
       setReasignaciones(new Map())
@@ -534,6 +609,7 @@ export default function RuteoAutomatico() {
                           {p.fantacli && <span className="text-xs text-dark-500 truncate">· {p.fantacli}</span>}
                           {pendiente   && <span className="text-xs bg-yellow-800/50 text-yellow-300 px-1.5 py-0.5 rounded">pendiente</span>}
                           {sinAsignar  && <span className="text-xs bg-red-800/50 text-red-300 px-1.5 py-0.5 rounded">sin asignar</span>}
+                          {(p.items_count ?? 0) > 0 && <span className="text-xs bg-blue-900/50 text-blue-300 px-1.5 py-0.5 rounded">{p.items_count} art.</span>}
                           {tieneCoords && <span title={`${p.ycoord}, ${p.xcoord}`}><MapPin className="w-3 h-3 text-blue-400 shrink-0" /></span>}
                         </div>
                         <p className="text-xs text-dark-500 mt-0.5 truncate">{p.cpbte} · {p.calle} {p.altura}, {p.dslocalidad}</p>
