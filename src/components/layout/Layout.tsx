@@ -29,6 +29,7 @@ const navItems = [
   { label: 'Despacho', icon: Truck, children: [
     { label: 'Despachos', path: '/despacho/despachos' },
     { label: 'Transportes', path: '/despacho/transportes' },
+    { label: 'Ruteo Automático', path: '/despacho/ruteo' },
   ]},
   { label: 'Configuracion', icon: Settings, children: [
     { label: 'ArtÃ­culos', path: '/configuracion/articulos' },
