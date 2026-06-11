@@ -10,7 +10,7 @@ import {
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 interface Deposito { iddepo: number; nombre: string; }
 interface Entorno  { identorno: number; nombre: string; detalle: string; }
-interface Transporte { id: string | number; seq: number; nomcli: string; chapa: string; modelo: string; propio: boolean; iddepo: number; }
+interface Transporte { idcliente: number; nomcli: string; chapa: string; modelo: string; propio: boolean; iddepo: number; maxpeso: number; }
 interface Reparto {
   idreparto: number; idtransp: number; dstransp: string;
   totcnt: number; totpes: number; totval: number; totpdv: number; bloqueada: boolean;
@@ -284,12 +284,12 @@ export default function RuteoAutomatico() {
 
   // ── Agregar transporte
   const agregarTransporte = async (t: Transporte) => {
-    const idtransporte = t.seq || Number(t.id)
+    const idtransporte = t.idcliente
     if (!config) return
-    setAgregandoTransp(idtransporte)
+    setAgregandoTransp(t.idcliente)
     setError('')
     try {
-      const data = await callEdge('agregar_transporte', { idtransporte: t.seq || t.id, iddepo: config.iddepo })
+      const data = await callEdge('agregar_transporte', { idtransporte: t.idcliente, iddepo: config.iddepo })
       setRepartos(prev => [...prev, data.reparto])
       setModalTransporte(false)
       setExito(`Transporte ${data.reparto.dstransp} agregado — Reparto #${data.reparto.idreparto}`)
@@ -367,7 +367,7 @@ export default function RuteoAutomatico() {
 
   const idsConReparto    = new Set(repartos.map(r => r.idtransp))
   const transportesNuevos = transportesDisp.filter(t =>
-    !idsConReparto.has(Number(t.id)) && !idsConReparto.has(t.seq) &&
+    !idsConReparto.has(t.idcliente) &&
     (!busqTransporte || [t.nomcli, t.chapa, t.modelo].join(' ').toLowerCase().includes(busqTransporte.toLowerCase()))
   )
   const hayPendientes = reasignaciones.size > 0
@@ -576,14 +576,14 @@ export default function RuteoAutomatico() {
                 </p>
               )}
               {transportesNuevos.map(t => (
-                <div key={t.id} className="flex items-center justify-between px-5 py-3 hover:bg-dark-700/50 transition-colors">
+                <div key={t.idcliente} className="flex items-center justify-between px-5 py-3 hover:bg-dark-700/50 transition-colors">
                   <div>
-                    <p className="text-sm font-medium text-white">{t.id} — {t.nomcli}</p>
+                    <p className="text-sm font-medium text-white">{t.idcliente} — {t.nomcli}</p>
                     <p className="text-xs text-dark-500">{t.chapa} · {t.modelo} · {t.propio ? 'Propio' : 'Externo'}</p>
                   </div>
-                  <button onClick={() => agregarTransporte(t)} disabled={agregandoTransp === t.id}
+                  <button onClick={() => agregarTransporte(t)} disabled={agregandoTransp === t.idcliente}
                     className="flex items-center gap-1.5 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition-colors">
-                    {agregandoTransp === t.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                    {agregandoTransp === t.idcliente ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
                     Agregar
                   </button>
                 </div>
