@@ -21,6 +21,7 @@ import Preparaciones from './pages/preparacion/Preparaciones'
 import Pedidos from './pages/preparacion/Pedidos'
 // Despacho
 import Despachos from './pages/despacho/Despachos'
+import RuteoAutomatico from './pages/despacho/RuteoAutomatico'
 // Configuracion
 import { Articulos, Clientes, Proveedores } from './pages/configuracion/ConfigPages'
 import UsuariosTransportes from './pages/configuracion/UsuariosTransportes'
@@ -85,6 +86,7 @@ export default function App() {
             {/* Despacho */}
             <Route path="/despacho/despachos" element={<Protected><Despachos /></Protected>} />
             <Route path="/despacho/transportes" element={<Protected><UsuariosTransportes /></Protected>} />
+            <Route path="/despacho/ruteo" element={<Protected><RuteoAutomatico /></Protected>} />
 
             {/* Configuracion */}
             <Route path="/configuracion/articulos" element={<Protected><Articulos /></Protected>} />
