@@ -8,9 +8,9 @@ import {
 } from 'lucide-react'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
-interface Deposito { iddepo: number; dsdepo: string; }
-interface Entorno  { identorno: number; dsentorno: string; }
-interface Transporte { id: number; nomcli: string; chapa: string; modelo: string; propio: boolean; }
+interface Deposito { iddepo: number; nombre: string; }
+interface Entorno  { identorno: number; nombre: string; detalle: string; }
+interface Transporte { id: string | number; seq: number; nomcli: string; chapa: string; modelo: string; propio: boolean; iddepo: number; }
 interface Reparto {
   idreparto: number; idtransp: number; dstransp: string;
   totcnt: number; totpes: number; totval: number; totpdv: number; bloqueada: boolean;
@@ -100,7 +100,7 @@ function ModalConfig({
                 className="w-full bg-dark-700 border border-dark-600 text-white text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-primary-500"
               >
                 {depositos.map(d => (
-                  <option key={d.iddepo} value={d.iddepo}>{d.dsdepo}</option>
+                  <option key={d.iddepo} value={d.iddepo}>{d.nombre}</option>
                 ))}
               </select>
             )}
@@ -130,7 +130,7 @@ function ModalConfig({
                         }`}
                     >
                       <span>{e.identorno}</span>
-                      <span className="font-medium">{e.dsentorno}</span>
+                      <span className="font-medium">{e.nombre}</span>
                       <span className="text-dark-500 text-xs truncate">{(e as any).detalle ?? ''}</span>
                     </div>
                   ))}
@@ -145,9 +145,9 @@ function ModalConfig({
             onClick={() => onAceptar({
               fecha,
               iddepo,
-              dsdepo: depoSel?.dsdepo ?? String(iddepo),
+              dsdepo: depoSel?.nombre ?? String(iddepo),
               identorno,
-              dsentorno: entornoSel?.dsentorno ?? String(identorno),
+              dsentorno: entornoSel?.nombre ?? String(identorno),
             })}
             disabled={cargando || !fecha}
             className="flex items-center gap-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
@@ -283,12 +283,13 @@ export default function RuteoAutomatico() {
   }
 
   // ── Agregar transporte
-  const agregarTransporte = async (idtransporte: number) => {
+  const agregarTransporte = async (t: Transporte) => {
+    const idtransporte = t.seq || Number(t.id)
     if (!config) return
     setAgregandoTransp(idtransporte)
     setError('')
     try {
-      const data = await callEdge('agregar_transporte', { idtransporte, iddepo: config.iddepo })
+      const data = await callEdge('agregar_transporte', { idtransporte: t.seq || t.id, iddepo: config.iddepo })
       setRepartos(prev => [...prev, data.reparto])
       setModalTransporte(false)
       setExito(`Transporte ${data.reparto.dstransp} agregado — Reparto #${data.reparto.idreparto}`)
@@ -366,7 +367,7 @@ export default function RuteoAutomatico() {
 
   const idsConReparto    = new Set(repartos.map(r => r.idtransp))
   const transportesNuevos = transportesDisp.filter(t =>
-    !idsConReparto.has(t.id) &&
+    !idsConReparto.has(Number(t.id)) && !idsConReparto.has(t.seq) &&
     (!busqTransporte || [t.nomcli, t.chapa, t.modelo].join(' ').toLowerCase().includes(busqTransporte.toLowerCase()))
   )
   const hayPendientes = reasignaciones.size > 0
@@ -580,7 +581,7 @@ export default function RuteoAutomatico() {
                     <p className="text-sm font-medium text-white">{t.id} — {t.nomcli}</p>
                     <p className="text-xs text-dark-500">{t.chapa} · {t.modelo} · {t.propio ? 'Propio' : 'Externo'}</p>
                   </div>
-                  <button onClick={() => agregarTransporte(t.id)} disabled={agregandoTransp === t.id}
+                  <button onClick={() => agregarTransporte(t)} disabled={agregandoTransp === t.id}
                     className="flex items-center gap-1.5 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition-colors">
                     {agregandoTransp === t.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
                     Agregar
