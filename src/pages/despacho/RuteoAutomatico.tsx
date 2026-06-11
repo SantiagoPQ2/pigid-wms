@@ -52,11 +52,11 @@ function ModalConfig({
   const [identorno, setIdentorno] = useState<number>(entornos[0]?.identorno ?? 1)
 
   // Sincronizar defaults cuando lleguen
-  useEffect(() => { if (depositos.length) setIddepo(depositos[0].iddepo) }, [depositos])
-  useEffect(() => { if (entornos.length)  setIdentorno(entornos[0].identorno) }, [entornos])
+  useEffect(() => { if (Array.isArray(depositos) && depositos.length) setIddepo(depositos[0].iddepo) }, [depositos])
+  useEffect(() => { if (Array.isArray(entornos)  && entornos.length)  setIdentorno(entornos[0].identorno) }, [entornos])
 
-  const depoSel    = depositos.find(d => d.iddepo === iddepo)
-  const entornoSel = entornos.find(e => e.identorno === identorno)
+  const depoSel    = Array.isArray(depositos) ? depositos.find(d => d.iddepo === iddepo) : undefined
+  const entornoSel = Array.isArray(entornos)  ? entornos.find(e => e.identorno === identorno) : undefined
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70">
@@ -250,9 +250,9 @@ export default function RuteoAutomatico() {
     setConfigCargando(true)
     callEdge('get_config')
       .then(data => {
-        setDepositos(data.depositos ?? [])
-        setEntornos(data.entornos ?? [])
-        setTransportesDisp(data.transportes ?? [])
+        setDepositos(Array.isArray(data.depositos) ? data.depositos : [])
+        setEntornos(Array.isArray(data.entornos) ? data.entornos : [])
+        setTransportesDisp(Array.isArray(data.transportes) ? data.transportes : [])
       })
       .catch(e => setError(e.message))
       .finally(() => setConfigCargando(false))
