@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# NO incluir VITE_SUPABASE_URL ni VITE_SUPABASE_ANON_KEY aquí
+# Esas variables se configuran en Netlify Dashboard > Environment Variables
+# para que no queden expuestas en el repo
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
