@@ -3,8 +3,64 @@ import Layout from '../components/Layout'
 import {
   ShoppingCart, User, Calendar, Plus, Trash2, Send,
   CheckCircle, XCircle, Package, AlertTriangle, ArrowLeft,
-  ChevronDown, ChevronUp, Settings2
+  ChevronDown, ChevronUp, Settings2, Lock
 } from 'lucide-react'
+
+const PASSWORD = '1236987452'
+
+function PantallaPassword({ onOk }: { onOk: () => void }) {
+  const [input, setInput] = useState('')
+  const [error, setError] = useState(false)
+
+  const verificar = () => {
+    if (input === PASSWORD) { onOk() }
+    else { setError(true); setInput('') }
+  }
+
+  return (
+    <Layout>
+      <div className="flex flex-col items-center justify-center min-h-[70vh] p-6">
+        <div className="w-full max-w-sm">
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-14 h-14 bg-primary-600/20 rounded-2xl flex items-center justify-center mb-4">
+              <Lock className="w-7 h-7 text-primary-400" />
+            </div>
+            <h1 className="text-xl font-bold text-white">Toma de Pedido</h1>
+            <p className="text-dark-400 text-sm mt-1">Ingresá la contraseña para continuar</p>
+          </div>
+
+          <input
+            type="password"
+            inputMode="numeric"
+            placeholder="Contraseña"
+            value={input}
+            onChange={e => { setInput(e.target.value); setError(false) }}
+            onKeyDown={e => e.key === 'Enter' && verificar()}
+            autoFocus
+            className={`w-full bg-dark-700 border rounded-xl px-4 py-3 text-white text-center text-xl font-mono tracking-widest placeholder-dark-600 focus:outline-none transition-colors mb-3 ${
+              error ? 'border-red-500 focus:border-red-500' : 'border-dark-500 focus:border-primary-500'
+            }`}
+          />
+
+          {error && (
+            <p className="text-red-400 text-sm text-center mb-3 flex items-center justify-center gap-1.5">
+              <AlertTriangle className="w-4 h-4" />
+              Contraseña incorrecta
+            </p>
+          )}
+
+          <button
+            onClick={verificar}
+            className="w-full btn-primary py-3 rounded-xl font-semibold flex items-center justify-center gap-2"
+          >
+            <Lock className="w-4 h-4" />
+            Entrar
+          </button>
+        </div>
+      </div>
+    </Layout>
+  )
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TIPOS
@@ -182,6 +238,12 @@ function TextInput({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function TomaPedido() {
+  const [autenticado, setAutenticado] = useState(false)
+  if (!autenticado) return <PantallaPassword onOk={() => setAutenticado(true)} />
+  return <FormularioPedido />
+}
+
+function FormularioPedido() {
   const [cab, setCab] = useState<Cabecera>({ ...CABECERA_INICIAL, fecentre: fechaHoy() })
   const [renglones, setRenglones] = useState<RenglonPedido[]>([])
   const [avanzadoAbierto, setAvanzadoAbierto] = useState(false)
